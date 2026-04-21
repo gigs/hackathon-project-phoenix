@@ -1,4 +1,9 @@
-import { loadCustomerData, getAvailableCustomerSlugs, loadSlackInsight } from "@/lib/data-loader";
+import {
+  loadCustomerData,
+  getAvailableCustomerSlugs,
+  loadOverallSentiment,
+  loadSlackInsight,
+} from "@/lib/data-loader";
 import { getCustomerSlugs } from "@/lib/customer-loader";
 import { MOCK_KLARNA, MOCK_REVOLUT, MOCK_SANTANDER } from "@/lib/mock-data";
 import { CustomerPageClient } from "./client";
@@ -57,6 +62,13 @@ export default async function CustomerPage({
   }
 
   const slackInsight = loadSlackInsight(slug);
+  const overallSentiment = loadOverallSentiment(slug);
 
-  return <CustomerPageClient data={data} slackInsight={slackInsight} />;
+  return (
+    <CustomerPageClient
+      data={data}
+      slackInsight={slackInsight}
+      overallSentiment={overallSentiment}
+    />
+  );
 }

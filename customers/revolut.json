@@ -42,7 +42,6 @@
   "slack_insight": {
     "enabled": false,
     "prompt": "Summarize launch readiness, testing status, and support escalations from Slack. Flag anything time-sensitive.",
-    "lookback_days": 14,
-    "max_messages_per_channel": 400
+    "lookback_days": 14
   }
 }

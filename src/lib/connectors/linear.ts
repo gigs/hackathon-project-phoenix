@@ -208,3 +208,348 @@ export async function fetchLinearData(
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Insight context — used by `npm run fetch-overall-sentiment`.
+//
+// Distinct from `fetchLinearData` (the dashboard fetch): pulls richer per-project
+// fields (URL, status update narratives) plus initiatives, so the prompt can
+// surface the relational texture around mechanical project state changes.
+// ---------------------------------------------------------------------------
+
+export interface LinearInsightStatusUpdate {
+  id: string;
+  url: string;
+  createdAt: string;
+  health: string | null;
+  author: string | null;
+  body: string;
+}
+
+export interface LinearInsightFlaggedIssue {
+  identifier: string;
+  title: string;
+  state: string;
+  url: string;
+  assignee: string | null;
+  /** SlugId of the project this issue belongs to, when known. */
+  projectSlugId: string | null;
+}
+
+export interface LinearInsightProject {
+  slugId: string;
+  name: string;
+  url: string;
+  state: string;
+  health: string | null;
+  /** SlugIds of initiatives this project rolls up to, if any of them were configured. */
+  initiativeSlugIds: string[];
+  statusUpdates: LinearInsightStatusUpdate[];
+  flaggedIssues: LinearInsightFlaggedIssue[];
+}
+
+export interface LinearInsightInitiative {
+  slugId: string;
+  name: string;
+  url: string;
+  status: string | null;
+  /** SlugIds of the configured projects that roll up to this initiative. */
+  projectSlugIds: string[];
+}
+
+export interface LinearInsightContext {
+  initiatives: LinearInsightInitiative[];
+  projects: LinearInsightProject[];
+  /** Projects in `linear_projects` that don't roll up to any configured initiative. */
+  unaffiliatedProjectSlugIds: string[];
+}
+
+interface InitiativeNode {
+  id: string;
+  slugId: string;
+  name: string;
+  url: string;
+  status: string | null;
+  projects: { nodes: { slugId: string }[] };
+}
+
+interface ProjectInsightNode {
+  id: string;
+  slugId: string;
+  name: string;
+  url: string;
+  state: string;
+  health: string | null;
+  projectUpdates: {
+    nodes: {
+      id: string;
+      body: string;
+      createdAt: string;
+      health: string | null;
+      url: string;
+      user: { name: string } | null;
+    }[];
+  };
+}
+
+interface FlaggedInsightIssueNode {
+  identifier: string;
+  title: string;
+  state: { name: string };
+  url: string;
+  assignee: { name: string } | null;
+  project: { slugId: string } | null;
+}
+
+async function fetchInitiativeInsight(
+  slugId: string,
+  noCache: boolean,
+): Promise<InitiativeNode | null> {
+  const cacheKey = `insight-initiative-${slugId}`;
+  if (!noCache) {
+    const cached = readCache<InitiativeNode>("linear", cacheKey);
+    if (cached) return cached;
+  }
+
+  try {
+    const data = await graphql<{ initiatives: { nodes: InitiativeNode[] } }>(
+      `
+        query($slugId: String!) {
+          initiatives(filter: { slugId: { eq: $slugId } }, first: 1) {
+            nodes {
+              id
+              slugId
+              name
+              url
+              status
+              projects(first: 100) {
+                nodes { slugId }
+              }
+            }
+          }
+        }
+      `,
+      { slugId },
+    );
+    const node = data.initiatives.nodes[0] ?? null;
+    if (node) writeCache("linear", cacheKey, node);
+    return node;
+  } catch (e) {
+    console.warn(
+      `  [linear] Failed to fetch initiative ${slugId}:`,
+      (e as Error).message,
+    );
+    return null;
+  }
+}
+
+async function fetchProjectInsight(
+  slugId: string,
+  noCache: boolean,
+): Promise<ProjectInsightNode | null> {
+  const cacheKey = `insight-project-${slugId}`;
+  if (!noCache) {
+    const cached = readCache<ProjectInsightNode>("linear", cacheKey);
+    if (cached) return cached;
+  }
+
+  try {
+    const data = await graphql<{ projects: { nodes: ProjectInsightNode[] } }>(
+      `
+        query($slugId: String!) {
+          projects(filter: { slugId: { eq: $slugId } }, first: 1) {
+            nodes {
+              id
+              slugId
+              name
+              url
+              state
+              health
+              projectUpdates(first: 25, orderBy: updatedAt) {
+                nodes {
+                  id
+                  body
+                  createdAt
+                  health
+                  url
+                  user { name }
+                }
+              }
+            }
+          }
+        }
+      `,
+      { slugId },
+    );
+    const node = data.projects.nodes[0] ?? null;
+    if (node) writeCache("linear", cacheKey, node);
+    return node;
+  } catch (e) {
+    console.warn(
+      `  [linear] Failed to fetch project insight ${slugId}:`,
+      (e as Error).message,
+    );
+    return null;
+  }
+}
+
+async function fetchFlaggedIssuesForInsight(
+  projectIds: string[],
+  noCache: boolean,
+): Promise<FlaggedInsightIssueNode[]> {
+  if (projectIds.length === 0) return [];
+  const cacheKey = `insight-flagged-${projectIds.slice().sort().join(",")}`;
+  if (!noCache) {
+    const cached = readCache<FlaggedInsightIssueNode[]>("linear", cacheKey);
+    if (cached) return cached;
+  }
+
+  try {
+    const data = await graphql<{ issues: { nodes: FlaggedInsightIssueNode[] } }>(
+      `
+        query($projectIds: [ID!]!) {
+          issues(
+            filter: {
+              project: { id: { in: $projectIds } }
+              labels: { name: { in: ["flagged", "flag"] } }
+            }
+            first: 100
+          ) {
+            nodes {
+              identifier
+              title
+              state { name }
+              url
+              assignee { name }
+              project { slugId }
+            }
+          }
+        }
+      `,
+      { projectIds },
+    );
+    writeCache("linear", cacheKey, data.issues.nodes);
+    return data.issues.nodes;
+  } catch (e) {
+    console.warn(
+      `  [linear] Failed to fetch flagged issues (insight):`,
+      (e as Error).message,
+    );
+    return [];
+  }
+}
+
+export interface LinearInsightFetchOptions {
+  projectSlugs: string[];
+  initiativeSlugs: string[];
+  lookbackDays: number;
+  noCache: boolean;
+}
+
+export async function fetchLinearInsightContext(
+  opts: LinearInsightFetchOptions,
+): Promise<ConnectorResult<LinearInsightContext>> {
+  try {
+    const cutoff = Date.now() - opts.lookbackDays * 24 * 60 * 60 * 1000;
+
+    const [initiativeNodes, projectNodes] = await Promise.all([
+      Promise.all(opts.initiativeSlugs.map((s) => fetchInitiativeInsight(s, opts.noCache))),
+      Promise.all(opts.projectSlugs.map((s) => fetchProjectInsight(s, opts.noCache))),
+    ]);
+
+    /* slug → list of configured initiatives it belongs to (intersection only — we
+       deliberately ignore initiatives that weren't listed in customers/<slug>.json). */
+    const projectToInitiatives = new Map<string, string[]>();
+    const initiatives: LinearInsightInitiative[] = [];
+    for (const node of initiativeNodes) {
+      if (!node) continue;
+      const memberSlugs = (node.projects.nodes ?? []).map((p) => p.slugId);
+      const configuredMembers = memberSlugs.filter((s) => opts.projectSlugs.includes(s));
+      initiatives.push({
+        slugId: node.slugId,
+        name: node.name,
+        url: node.url,
+        status: node.status,
+        projectSlugIds: configuredMembers,
+      });
+      for (const s of configuredMembers) {
+        const existing = projectToInitiatives.get(s) ?? [];
+        if (!existing.includes(node.slugId)) existing.push(node.slugId);
+        projectToInitiatives.set(s, existing);
+      }
+    }
+
+    const validProjectIds: string[] = [];
+    const projectMeta: { node: ProjectInsightNode; initiativeSlugIds: string[] }[] = [];
+    for (const node of projectNodes) {
+      if (!node) continue;
+      validProjectIds.push(node.id);
+      projectMeta.push({
+        node,
+        initiativeSlugIds: projectToInitiatives.get(node.slugId) ?? [],
+      });
+    }
+
+    const flagged = await fetchFlaggedIssuesForInsight(validProjectIds, opts.noCache);
+    const flaggedByProject = new Map<string, LinearInsightFlaggedIssue[]>();
+    for (const issue of flagged) {
+      const slugId = issue.project?.slugId ?? null;
+      const row: LinearInsightFlaggedIssue = {
+        identifier: issue.identifier,
+        title: issue.title,
+        state: issue.state.name,
+        url: issue.url,
+        assignee: issue.assignee?.name ?? null,
+        projectSlugId: slugId,
+      };
+      const key = slugId ?? "__unknown__";
+      const existing = flaggedByProject.get(key) ?? [];
+      existing.push(row);
+      flaggedByProject.set(key, existing);
+    }
+
+    const projects: LinearInsightProject[] = projectMeta.map(({ node, initiativeSlugIds }) => {
+      const updatesInWindow = node.projectUpdates.nodes
+        .filter((u) => {
+          const ts = Date.parse(u.createdAt);
+          return Number.isFinite(ts) && ts >= cutoff;
+        })
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .map((u): LinearInsightStatusUpdate => ({
+          id: u.id,
+          url: u.url,
+          createdAt: u.createdAt,
+          health: u.health,
+          author: u.user?.name ?? null,
+          body: (u.body ?? "").trim(),
+        }));
+
+      return {
+        slugId: node.slugId,
+        name: node.name,
+        url: node.url,
+        state: node.state,
+        health: node.health,
+        initiativeSlugIds,
+        statusUpdates: updatesInWindow,
+        flaggedIssues: flaggedByProject.get(node.slugId) ?? [],
+      };
+    });
+
+    const unaffiliated = projects
+      .filter((p) => p.initiativeSlugIds.length === 0)
+      .map((p) => p.slugId);
+
+    return {
+      data: {
+        initiatives,
+        projects,
+        unaffiliatedProjectSlugIds: unaffiliated,
+      },
+      error: null,
+      source: "linear",
+    };
+  } catch (e) {
+    return { data: null, error: (e as Error).message, source: "linear" };
+  }
+}

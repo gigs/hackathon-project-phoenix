@@ -7,8 +7,10 @@
     "build": "next build",
     "fetch-data": "tsx scripts/fetch-data.ts",
     "fetch-slack-insight": "tsx scripts/fetch-slack-insight.ts",
+    "fetch-overall-sentiment": "tsx scripts/fetch-overall-sentiment.ts",
     "build:full": "npm run fetch-data && npm run build",
     "build:full:insight": "npm run fetch-data && npm run fetch-slack-insight && npm run build",
+    "build:full:sentiment": "npm run fetch-data && npm run fetch-slack-insight && npm run fetch-overall-sentiment && npm run build",
     "serve": "npx serve out",
     "lint": "eslint"
   },

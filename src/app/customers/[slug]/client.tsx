@@ -7,15 +7,23 @@ import { TimelineChart } from "@/components/timeline-chart";
 import { DealsTable } from "@/components/deals-table";
 import { HexEmbeds } from "@/components/hex-embeds";
 import { ChatWidget } from "@/components/chat-widget";
-import type { CustomerData, SlackInsightPayload, TimelineMetric } from "@/lib/types";
+import type {
+  CustomerData,
+  OverallSentimentPayload,
+  SlackInsightPayload,
+  TimelineMetric,
+} from "@/lib/types";
+import { OverallSentimentPanel } from "@/components/overall-sentiment-panel";
 import { SlackInsightPanel } from "@/components/slack-insight-panel";
 
 export function CustomerPageClient({
   data,
   slackInsight,
+  overallSentiment,
 }: {
   data: CustomerData;
   slackInsight: SlackInsightPayload | null;
+  overallSentiment: OverallSentimentPayload | null;
 }) {
   const [activeDeal, setActiveDeal] = useState<string | null>(null);
   const [metric, setMetric] = useState<TimelineMetric>("arr");
@@ -23,6 +31,8 @@ export function CustomerPageClient({
   return (
     <div className="mx-auto max-w-[1200px] px-6 py-6 space-y-4">
       <CustomerHeader data={data} />
+
+      {overallSentiment && <OverallSentimentPanel sentiment={overallSentiment} />}
 
       {slackInsight && <SlackInsightPanel insight={slackInsight} />}
 

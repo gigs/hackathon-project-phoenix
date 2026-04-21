@@ -9,7 +9,6 @@
   "slack_insight": {
     "enabled": false,
     "prompt": "Placeholder — enable after Slack channels are configured.",
-    "lookback_days": 14,
-    "max_messages_per_channel": 200
+    "lookback_days": 14
   }
 }

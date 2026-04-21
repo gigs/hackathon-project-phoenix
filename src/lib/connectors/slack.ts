@@ -8,8 +8,9 @@ interface SlackChannel {
 
 export interface SlackInsightTranscriptOptions {
   lookbackDays: number;
+  /** `0` = no cap (all messages in the lookback window, after thread merge). */
   maxMessagesPerChannel: number;
-  /** Truncate each message body for token safety. */
+  /** `0` = no truncation (full Slack text / file placeholder). */
   maxMessageChars: number;
   noCache: boolean;
 }
@@ -18,6 +19,8 @@ export interface SlackInsightMessage {
   ts: string;
   author: string;
   text: string;
+  /** Present when this row is a reply inside a thread (`thread_ts` ≠ this message `ts`). */
+  thread_parent_ts?: string;
 }
 
 export interface SlackInsightChannelTranscript {
@@ -27,8 +30,8 @@ export interface SlackInsightChannelTranscript {
   messages: SlackInsightMessage[];
 }
 
-const SKIP_SUBTYPES = new Set([
-  "bot_message",
+/** Channel meta / system events only — not `bot_message` (many external channels are bot-heavy). */
+const INSIGHT_SKIP_SUBTYPES = new Set([
   "channel_join",
   "channel_leave",
   "channel_topic",
@@ -252,12 +255,77 @@ function truncateText(s: string, maxChars: number): string {
   return `${t.slice(0, maxChars)}…`;
 }
 
+function applyInsightMessageBody(raw: string, maxMessageChars: number): string {
+  if (!Number.isFinite(maxMessageChars) || maxMessageChars <= 0) return raw;
+  return truncateText(raw, maxMessageChars);
+}
+
 interface SlackHistoryMessage {
   type: string;
   user?: string;
+  username?: string;
   text?: string;
   ts: string;
   subtype?: string;
+  thread_ts?: string;
+  reply_count?: number;
+  files?: Array<{ name?: string; title?: string }>;
+}
+
+function slackMessageQualifies(msg: SlackHistoryMessage, oldestTs: number): boolean {
+  if (parseFloat(msg.ts) < oldestTs) return false;
+  if (msg.subtype && INSIGHT_SKIP_SUBTYPES.has(msg.subtype)) return false;
+  const body = msg.text?.trim();
+  const hasFiles = Array.isArray(msg.files) && msg.files.length > 0;
+  if (!body && !hasFiles) return false;
+  return true;
+}
+
+function insightMessageText(msg: SlackHistoryMessage): string {
+  const body = msg.text?.trim();
+  if (body) return body;
+  if (msg.files?.length) {
+    const names = msg.files.map((f) => f.name || f.title || "file").filter(Boolean);
+    return `[file: ${names.join(", ")}]`;
+  }
+  return "";
+}
+
+async function fetchThreadRepliesForParent(
+  channelId: string,
+  parentTs: string,
+  oldestTs: number,
+): Promise<SlackHistoryMessage[]> {
+  const out: SlackHistoryMessage[] = [];
+  let cursor = "";
+  try {
+    do {
+      const params: Record<string, string> = {
+        channel: channelId,
+        ts: parentTs,
+        limit: "200",
+      };
+      if (cursor) params.cursor = cursor;
+
+      const data = await slackFetch<{
+        messages: SlackHistoryMessage[];
+        response_metadata?: { next_cursor?: string };
+      }>("conversations.replies", params);
+
+      for (const msg of data.messages) {
+        if (!slackMessageQualifies(msg, oldestTs)) continue;
+        out.push(msg);
+      }
+
+      cursor = data.response_metadata?.next_cursor ?? "";
+    } while (cursor);
+  } catch (e) {
+    console.warn(
+      `  [slack] conversations.replies failed (parent_ts=${parentTs}):`,
+      (e as Error).message,
+    );
+  }
+  return out;
 }
 
 async function fetchUserDisplayName(userId: string, noCache: boolean): Promise<string> {
@@ -304,22 +372,44 @@ async function fetchChannelTranscriptMessages(
       }>("conversations.history", params);
 
       for (const msg of data.messages) {
-        if (parseFloat(msg.ts) < oldestTs) continue;
-        if (msg.subtype && SKIP_SUBTYPES.has(msg.subtype)) continue;
-        const body = msg.text?.trim();
-        if (!body) continue;
+        if (!slackMessageQualifies(msg, oldestTs)) continue;
         raw.push(msg);
       }
 
       cursor = data.response_metadata?.next_cursor ?? "";
     } while (cursor);
 
-    const sortedDesc = [...raw].sort((a, b) => parseFloat(b.ts) - parseFloat(a.ts));
-    const capped = sortedDesc.slice(0, options.maxMessagesPerChannel);
-    const chronological = capped.sort((a, b) => parseFloat(a.ts) - parseFloat(b.ts));
+    const byTs = new Map<string, SlackHistoryMessage>();
+    for (const m of raw) {
+      byTs.set(m.ts, m);
+    }
+
+    const threadRootsToFetch = new Set<string>();
+    for (const m of raw) {
+      const rc = m.reply_count;
+      if (typeof rc === "number" && rc > 0) {
+        threadRootsToFetch.add(m.ts);
+      }
+    }
+
+    for (const parentTs of threadRootsToFetch) {
+      await slackApiPause();
+      const threadMsgs = await fetchThreadRepliesForParent(channelId, parentTs, oldestTs);
+      for (const tm of threadMsgs) {
+        if (!byTs.has(tm.ts)) byTs.set(tm.ts, tm);
+      }
+    }
+
+    let merged = [...byTs.values()].sort((a, b) => parseFloat(a.ts) - parseFloat(b.ts));
+
+    const cap = options.maxMessagesPerChannel;
+    if (Number.isFinite(cap) && cap > 0 && merged.length > cap) {
+      const sortedDesc = [...merged].sort((a, b) => parseFloat(b.ts) - parseFloat(a.ts));
+      merged = sortedDesc.slice(0, cap).sort((a, b) => parseFloat(a.ts) - parseFloat(b.ts));
+    }
 
     const userIds = new Set<string>();
-    for (const m of chronological) {
+    for (const m of merged) {
       if (m.user) userIds.add(m.user);
     }
 
@@ -328,11 +418,18 @@ async function fetchChannelTranscriptMessages(
       displayNames.set(uid, await fetchUserDisplayName(uid, options.noCache));
     }
 
-    return chronological.map((m) => ({
-      ts: m.ts,
-      author: m.user ? displayNames.get(m.user) ?? m.user : "unknown",
-      text: truncateText(m.text ?? "", options.maxMessageChars),
-    }));
+    return merged.map((m) => {
+      const parent = m.thread_ts && m.thread_ts !== m.ts ? m.thread_ts : undefined;
+      const author =
+        m.username?.trim() ||
+        (m.user ? displayNames.get(m.user) ?? m.user : m.subtype === "bot_message" ? "bot" : "unknown");
+      return {
+        ts: m.ts,
+        author,
+        text: applyInsightMessageBody(insightMessageText(m), options.maxMessageChars),
+        ...(parent ? { thread_parent_ts: parent } : {}),
+      };
+    });
   } catch (e) {
     console.warn(`  [slack] Failed transcript for ${channelName}:`, (e as Error).message);
     return [];

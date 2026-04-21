@@ -2,21 +2,22 @@
   "name": "Klarna",
   "hubspot_company_record_id": "19069457924",
   "slack_channels": [
+    "C06TU74L51T",
     "C06N5SXN00J",
-    "C06TU74L51T"
+    "C0A0CJQC0NS"
   ],
   "revenue_lines": [
     {
       "label": "Klarna US",
       "hubspot_deal_record_ids": ["20303327145"],
-      "linear_projects": ["klarna-us-mvno-19069457924-14774e3ed18c"],
+      "linear_projects": ["14774e3ed18c"],
       "slack_channels": [],
       "lightdash_dashboards": []
     },
     {
       "label": "Klarna UK",
       "hubspot_deal_record_ids": ["37968818055"],
-      "linear_projects": ["klarna-uk-mvno-19069457924-010463626266"],
+      "linear_projects": ["010463626266"],
       "slack_channels": [],
       "lightdash_dashboards": []
     },
@@ -29,10 +30,18 @@
     }
   ],
   "linear_initiatives": [
-    "am-klarna-account-cb4fd5a5abb5"
+    "cb4fd5a5abb5"
   ],
   "linear_projects": [
-    "klarna-requests-eb470d6346eb"
+    "ee91c2c754b9",
+    "9946c37aa2ee",
+    "e7b64ffab9ea",
+    "eb470d6346eb",
+    "5323548d1896",
+    "a0bbb6ad4d5a",
+    "010463626266",
+    "70f7d88b4a10",
+    "14774e3ed18c"
   ],
   "google_sheets": [
     {
@@ -43,7 +52,11 @@
   "slack_insight": {
     "enabled": true,
     "prompt_file": "customers/prompts/klarna_prompt.md",
-    "lookback_days": 30,
-    "max_messages_per_channel": 300
+    "lookback_days": 60
+  },
+  "overall_sentiment": {
+    "enabled": true,
+    "prompt_file": "customers/prompts/klarna.overall-sentiment.md",
+    "lookback_days": 60
   }
 }

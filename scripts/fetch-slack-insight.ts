@@ -9,6 +9,12 @@ import {
   type SlackInsightChannelTranscript,
 } from "../src/lib/connectors/slack";
 import { loadAllCustomerConfigs, loadCustomerConfig } from "../src/lib/customer-loader";
+import {
+  formatTranscriptsForPrompt,
+  loadTranscriptSnapshot,
+  saveTranscriptSnapshot,
+  TRANSCRIPT_SNAPSHOT_VERSION,
+} from "../src/lib/insight-format";
 import type {
   CustomerConfig,
   SlackInsightHealthBlock,
@@ -24,8 +30,10 @@ import { SLACK_INSIGHT_SCHEMA_VERSION } from "../src/lib/types";
 const DATA_CUSTOMERS_DIR = path.resolve(process.cwd(), "data", "customers");
 
 const DEFAULT_LOOKBACK_DAYS = 14;
-const DEFAULT_MAX_MESSAGES_PER_CHANNEL = 300;
-const DEFAULT_MAX_MESSAGE_CHARS = 3500;
+/** `0` = include every message in the lookback window (no cap). */
+const DEFAULT_MAX_MESSAGES_PER_CHANNEL = 0;
+/** `0` = full Slack message text (no truncation). */
+const DEFAULT_MAX_MESSAGE_CHARS = 0;
 const DEFAULT_MODEL = "claude-3-5-sonnet-20241022";
 
 /** Matches `customers/prompts/klarna_prompt.md` — model returns only these keys; pipeline merges metadata. */
@@ -35,7 +43,7 @@ Respond with exactly one JSON object and nothing else: no markdown code fences, 
 
 Your JSON must include only these root keys (matching the analytical instructions and Output schema in the user message):
 - health: { "status": "green" | "yellow" | "red", "summary": string }
-- stakeholders: array of { "name", "sentiment": "positive" | "neutral" | "negative" | "no_signal", "signal", "url": string | null }
+- stakeholders: array of { "name", "title"?: string, "sentiment": "positive" | "neutral" | "negative" | "no_signal", "signal", "url": string | null }
 - updates: array of { "summary", "url": string, "timestamp": "YYYY-MM-DD" } — max 3 items per user instructions unless user says otherwise
 - signals: array of { "type": "warning" | "momentum" | "opportunity" | "change", "summary", "url": string | null } — max 5 items per user instructions unless user says otherwise
 
@@ -45,18 +53,20 @@ Rules:
 - Use null for url when you cannot form a valid permalink from the transcript lines (permalink hints may appear in the transcript section if configured).
 - Do not include schema_version, generated_at, or sources in your output; the pipeline adds those.`;
 
-function parseArgs(argv: string[]): { customer?: string; noCache: boolean; dryRun: boolean } {
+function parseArgs(argv: string[]): { customer?: string; noCache: boolean; dryRun: boolean; reuseTranscript: boolean } {
   let customer: string | undefined;
   let noCache = false;
   let dryRun = false;
+  let reuseTranscript = false;
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--no-cache") noCache = true;
     else if (a === "--dry-run") dryRun = true;
+    else if (a === "--reuse-transcript") reuseTranscript = true;
     else if (a === "--customer" && argv[i + 1]) customer = argv[++i];
     else if (a.startsWith("--customer=")) customer = a.slice("--customer=".length);
   }
-  return { customer, noCache, dryRun };
+  return { customer, noCache, dryRun, reuseTranscript };
 }
 
 function ensureDir(dir: string) {
@@ -92,37 +102,6 @@ function resolveSlackInsightPrompt(slug: string, insightCfg: NonNullable<Custome
   }
 
   return parts.join("\n\n");
-}
-
-function slackPermalink(
-  workspaceSubdomain: string | undefined,
-  channelId: string | null,
-  ts: string,
-): string | null {
-  if (!workspaceSubdomain || !channelId || !ts) return null;
-  const pTs = ts.replace(/\./g, "");
-  return `https://${workspaceSubdomain}.slack.com/archives/${channelId}/p${pTs}`;
-}
-
-function formatTranscriptsForPrompt(transcripts: SlackInsightChannelTranscript[]): string {
-  const subdomain = process.env.SLACK_WORKSPACE_SUBDOMAIN?.trim();
-  const parts: string[] = [];
-  for (const ch of transcripts) {
-    parts.push(`## ${ch.channelName}${ch.channelId ? ` (channel_id=${ch.channelId})` : ""}`);
-    if (ch.messages.length === 0) {
-      parts.push("(no messages in window or channel not found)");
-      parts.push("");
-      continue;
-    }
-    for (const m of ch.messages) {
-      const iso = new Date(parseFloat(m.ts) * 1000).toISOString();
-      const link = slackPermalink(subdomain, ch.channelId, m.ts);
-      const linkSuffix = link ? ` Link: ${link}` : "";
-      parts.push(`[${iso}] ${m.author}: ${m.text}${linkSuffix}`);
-    }
-    parts.push("");
-  }
-  return parts.join("\n");
 }
 
 function stripJsonFence(text: string): string {
@@ -162,8 +141,12 @@ function parseStakeholders(raw: unknown): SlackInsightStakeholderRow[] {
       ? (sent as SlackInsightStakeholderSentiment)
       : "no_signal";
     const urlVal = x.url;
+    const titleRaw = x.title;
+    const title =
+      typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : undefined;
     return {
       name: typeof x.name === "string" ? x.name : "",
+      ...(title ? { title } : {}),
       sentiment,
       signal: typeof x.signal === "string" ? x.signal : "",
       url: urlVal === null || typeof urlVal === "string" ? (urlVal as string | null) : null,
@@ -250,7 +233,7 @@ async function repairJson(anthropic: Anthropic, model: string, invalid: string):
 }
 
 async function main() {
-  const { customer, noCache, dryRun } = parseArgs(process.argv);
+  const { customer, noCache, dryRun, reuseTranscript } = parseArgs(process.argv);
 
   const targets: { slug: string; config: CustomerConfig }[] = [];
   if (customer) {
@@ -293,15 +276,42 @@ async function main() {
 
     const lookback = insightCfg.lookback_days ?? DEFAULT_LOOKBACK_DAYS;
     const maxMsg = insightCfg.max_messages_per_channel ?? DEFAULT_MAX_MESSAGES_PER_CHANNEL;
+    const maxChars = insightCfg.max_message_chars ?? DEFAULT_MAX_MESSAGE_CHARS;
 
-    console.log(`\n📎 ${slug}: fetching transcripts (${channels.length} channel(s), ${lookback}d lookback)...`);
+    let transcripts: SlackInsightChannelTranscript[] | null = null;
+    if (reuseTranscript) {
+      const snap = loadTranscriptSnapshot(slug);
+      if (snap) {
+        transcripts = snap.transcripts;
+        console.log(
+          `\n📎 ${slug}: using saved transcript snapshot (${snap.transcripts.length} channel(s), saved ${snap.generated_at})...`,
+        );
+      } else {
+        console.warn(`\n📎 ${slug}: --reuse-transcript set but no snapshot found; fetching from Slack...`);
+      }
+    }
 
-    const transcripts = await fetchSlackTranscriptsForInsight(channels, {
-      lookbackDays: lookback,
-      maxMessagesPerChannel: maxMsg,
-      maxMessageChars: DEFAULT_MAX_MESSAGE_CHARS,
-      noCache,
-    });
+    if (!transcripts) {
+      console.log(
+        `\n📎 ${slug}: fetching transcripts (${channels.length} channel(s), ${lookback}d lookback; threads=yes; msg cap=${maxMsg === 0 ? "none" : maxMsg}; truncate=${maxChars === 0 ? "off" : maxChars})...`,
+      );
+      transcripts = await fetchSlackTranscriptsForInsight(channels, {
+        lookbackDays: lookback,
+        maxMessagesPerChannel: maxMsg,
+        maxMessageChars: maxChars,
+        noCache,
+      });
+      const outPath = saveTranscriptSnapshot({
+        schema_version: TRANSCRIPT_SNAPSHOT_VERSION,
+        generated_at: new Date().toISOString(),
+        customer_slug: slug,
+        customer_name: config.name,
+        lookback_days: lookback,
+        channels,
+        transcripts,
+      });
+      console.log(`   saved transcript snapshot: ${outPath}`);
+    }
 
     const sourcesAccurate: SlackInsightPayload["sources"] = transcripts.map((t) => ({
       channel: t.channelName,
@@ -309,7 +319,16 @@ async function main() {
     }));
 
     if (dryRun) {
+      const totalMsgs = transcripts.reduce((n, t) => n + t.messages.length, 0);
+      const bodyChars = transcripts.reduce(
+        (n, t) => n + t.messages.reduce((m, msg) => m + msg.text.length, 0),
+        0,
+      );
+      const transcriptBlock = formatTranscriptsForPrompt(transcripts);
       console.log(`   [dry-run] channels: ${sourcesAccurate.map((s) => `${s.channel}=${s.message_count}`).join(", ")}`);
+      console.log(`   [dry-run] total messages: ${totalMsgs}`);
+      console.log(`   [dry-run] Slack message body characters (sum of text fields): ${bodyChars}`);
+      console.log(`   [dry-run] formatted transcript block characters: ${transcriptBlock.length}`);
       continue;
     }
 

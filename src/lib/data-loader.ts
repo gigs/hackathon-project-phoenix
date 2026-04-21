@@ -1,7 +1,12 @@
 import fs from "fs";
 import path from "path";
-import type { CustomerData, PortfolioEntry, SlackInsightPayload } from "./types";
-import { SLACK_INSIGHT_SCHEMA_VERSION } from "./types";
+import type {
+  CustomerData,
+  OverallSentimentPayload,
+  PortfolioEntry,
+  SlackInsightPayload,
+} from "./types";
+import { OVERALL_SENTIMENT_SCHEMA_VERSION, SLACK_INSIGHT_SCHEMA_VERSION } from "./types";
 
 const DATA_DIR = path.resolve(process.cwd(), "data");
 
@@ -24,7 +29,13 @@ export function getAvailableCustomerSlugs(): string[] {
   if (!fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
-    .filter((f) => f.endsWith(".json") && !f.includes(".slack-insight"))
+    .filter(
+      (f) =>
+        f.endsWith(".json") &&
+        !f.includes(".slack-insight") &&
+        !f.includes(".slack-transcript") &&
+        !f.includes(".overall-sentiment"),
+    )
     .map((f) => f.replace(/\.json$/, ""));
 }
 
@@ -36,6 +47,20 @@ export function loadSlackInsight(slug: string): SlackInsightPayload | null {
     const raw = fs.readFileSync(filePath, "utf-8");
     const data = JSON.parse(raw) as SlackInsightPayload;
     if (data.schema_version !== SLACK_INSIGHT_SCHEMA_VERSION) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/** Sidecar produced by `npm run fetch-overall-sentiment` — optional. */
+export function loadOverallSentiment(slug: string): OverallSentimentPayload | null {
+  const filePath = path.join(DATA_DIR, "customers", `${slug}.overall-sentiment.json`);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const data = JSON.parse(raw) as OverallSentimentPayload;
+    if (data.schema_version !== OVERALL_SENTIMENT_SCHEMA_VERSION) return null;
     return data;
   } catch {
     return null;

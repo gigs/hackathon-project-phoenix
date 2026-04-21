@@ -15,8 +15,12 @@ export interface SlackInsightConfig {
   prompt_file?: string;
   /** Slack history window; default applied in script if omitted. */
   lookback_days?: number;
-  /** Cap per channel before sending to the model; default applied in script if omitted. */
+  /**
+   * Max rows per channel after merging threads. `0` or omit = no cap (all messages in window).
+   */
   max_messages_per_channel?: number;
+  /** Max characters per message body in transcript. `0` or omit = full text (no truncation). */
+  max_message_chars?: number;
 }
 
 export interface CustomerConfig {
@@ -29,6 +33,23 @@ export interface CustomerConfig {
   google_sheets: GoogleSheet[];
   hex_embeds?: HexEmbed[];
   slack_insight?: SlackInsightConfig;
+  overall_sentiment?: OverallSentimentConfig;
+}
+
+/**
+ * Per-customer overall-sentiment job (`npm run fetch-overall-sentiment`).
+ * Combines the saved Slack transcript snapshot with freshly-fetched Linear
+ * project/initiative status updates and sends both to Claude using the
+ * configured prompt. Optional.
+ */
+export interface OverallSentimentConfig {
+  enabled: boolean;
+  /** Repo-relative path to a `.md` or `.txt` file with the prompt. */
+  prompt_file?: string;
+  /** Inline prompt; appended after `prompt_file` content if both set. */
+  prompt?: string;
+  /** Window for both Slack messages and Linear project updates; default 60. */
+  lookback_days?: number;
 }
 
 export interface RevenueLine {
@@ -186,6 +207,8 @@ export type SlackInsightStakeholderSentiment =
 
 export interface SlackInsightStakeholderRow {
   name: string;
+  /** Role or org title (when the prompt includes it in model output). */
+  title?: string;
   sentiment: SlackInsightStakeholderSentiment;
   signal: string;
   url: string | null;
@@ -213,6 +236,41 @@ export interface SlackInsightPayload {
   stakeholders: SlackInsightStakeholderRow[];
   updates: SlackInsightUpdateRow[];
   signals: SlackInsightSignalRow[];
+}
+
+/**
+ * Overall-sentiment sidecar (`data/customers/<slug>.overall-sentiment.json`).
+ * Schema mirrors the `customers/prompts/<slug>.overall-sentiment.md` Output
+ * section; pipeline adds `schema_version`, `generated_at`, and `sources`.
+ */
+export const OVERALL_SENTIMENT_SCHEMA_VERSION = 1 as const;
+
+export type OverallSentimentSource = "slack" | "linear";
+
+export interface OverallSentimentSignal {
+  summary: string;
+  source: OverallSentimentSource;
+  url: string | null;
+}
+
+export interface OverallSentimentSources {
+  slack: { channel: string; message_count: number }[];
+  linear: {
+    initiatives: number;
+    projects: number;
+    status_updates: number;
+    flagged_issues: number;
+  };
+}
+
+export interface OverallSentimentPayload {
+  schema_version: typeof OVERALL_SENTIMENT_SCHEMA_VERSION;
+  generated_at: string;
+  lookback_days: number;
+  sources: OverallSentimentSources;
+  summary: string;
+  momentum_signals: OverallSentimentSignal[];
+  warning_signs: OverallSentimentSignal[];
 }
 
 // --- Portfolio summary (written by fetch script) ---
