@@ -1,10 +1,12 @@
 import {
+  loadAccountBrief,
   loadCustomerData,
   getAvailableCustomerSlugs,
   loadOverallSentiment,
   loadSlackInsight,
 } from "@/lib/data-loader";
 import { getCustomerSlugs } from "@/lib/customer-loader";
+import { buildFallbackAccountBrief } from "@/lib/customer-intelligence";
 import { MOCK_KLARNA, MOCK_REVOLUT, MOCK_SANTANDER } from "@/lib/mock-data";
 import { CustomerPageClient } from "./client";
 import type { CustomerData } from "@/lib/types";
@@ -18,13 +20,16 @@ const MOCK_MAP: Record<string, CustomerData> = {
 export function generateStaticParams() {
   const dataSlugs = getAvailableCustomerSlugs();
   const configSlugs = getCustomerSlugs();
-  const slugs = dataSlugs.length > 0 ? dataSlugs : configSlugs;
-  return slugs.map((slug) => ({ slug }));
+  // Union: with `output: export`, every navigable slug must be pre-rendered. If only some
+  // accounts have `data/customers/<slug>.json`, we still need pages for all `customers/*.json`.
+  const slugSet = new Set([...configSlugs, ...dataSlugs]);
+  return [...slugSet].sort().map((slug) => ({ slug }));
 }
 
 function mergeWithMock(fetched: CustomerData | null, mock: CustomerData | undefined): CustomerData | null {
   if (!fetched && !mock) return null;
-  if (!fetched) return mock ?? null;
+  /** No API-backed `data/customers/<slug>.json` — keep mock charts/deals but omit fake flagged Linear rows. */
+  if (!fetched) return mock ? { ...mock, linearIssues: [] } : null;
   if (!mock) return fetched;
 
   return {
@@ -32,7 +37,8 @@ function mergeWithMock(fetched: CustomerData | null, mock: CustomerData | undefi
     deals: fetched.deals.some((d) => d.hubspotStage !== null) ? fetched.deals : mock.deals,
     arrData: fetched.arrData.length > 0 ? fetched.arrData : mock.arrData,
     milestones: (fetched.milestones ?? []).length > 0 ? fetched.milestones : mock.milestones,
-    linearIssues: fetched.linearIssues.length > 0 ? fetched.linearIssues : mock.linearIssues,
+    // Real fetch-data output only: never substitute mock flagged issues when empty.
+    linearIssues: fetched.linearIssues,
     health: fetched.health !== "gray" ? fetched.health : mock.health,
     driName: fetched.driName ?? mock.driName,
     driAvatarUrl: fetched.driAvatarUrl ?? mock.driAvatarUrl,
@@ -63,12 +69,14 @@ export default async function CustomerPage({
 
   const slackInsight = loadSlackInsight(slug);
   const overallSentiment = loadOverallSentiment(slug);
+  const accountBrief = loadAccountBrief(slug) ?? buildFallbackAccountBrief(data, overallSentiment, slackInsight);
 
   return (
     <CustomerPageClient
       data={data}
       slackInsight={slackInsight}
       overallSentiment={overallSentiment}
+      accountBrief={accountBrief}
     />
   );
 }

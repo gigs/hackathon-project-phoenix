@@ -14,8 +14,8 @@ function sourceBadge(source: OverallSentimentSignal["source"]) {
 function SignalRow({ signal, accent }: { signal: OverallSentimentSignal; accent: "momentum" | "warning" }) {
   const accentClass =
     accent === "momentum"
-      ? "border-l-emerald-500 bg-emerald-50/40"
-      : "border-l-amber-500 bg-amber-50/40";
+      ? "border-l-central-500 bg-central-50/40"
+      : "border-l-warning bg-warning/8";
   const linkLabel = signal.source === "linear" ? "View in Linear" : "View in Slack";
   return (
     <li
@@ -52,7 +52,7 @@ function Column({
   accent: "momentum" | "warning";
   emptyText: string;
 }) {
-  const dotColor = accent === "momentum" ? "bg-emerald-500" : "bg-amber-500";
+  const dotColor = accent === "momentum" ? "bg-central-500" : "bg-warning";
   return (
     <div className="space-y-2">
       <h3 className="flex items-center gap-2 text-sm font-semibold text-sage-800">
@@ -81,14 +81,6 @@ export function OverallSentimentPanel({ sentiment }: { sentiment: OverallSentime
     day: "numeric",
   });
 
-  const slackSources =
-    sentiment.sources.slack?.map((s) => `${s.channel} (${s.message_count})`).join(" · ") ?? "";
-  const lin = sentiment.sources.linear;
-  const linearSources =
-    lin != null
-      ? `${lin.initiatives} initiative(s), ${lin.projects} project(s), ${lin.status_updates} status update(s), ${lin.flagged_issues} flagged`
-      : "";
-
   return (
     <section
       className="space-y-4 rounded-xl border border-sage-200 bg-white px-6 py-5 shadow-sm"
@@ -103,21 +95,6 @@ export function OverallSentimentPanel({ sentiment }: { sentiment: OverallSentime
         </div>
         <p className="text-xs tabular-nums text-sage-400">Updated {updated}</p>
       </div>
-
-      {(slackSources || linearSources) && (
-        <div className="rounded-lg border border-sage-100 bg-sage-50/50 px-3 py-2 text-[11px] leading-snug text-sage-600">
-          {slackSources ? (
-            <p>
-              <span className="font-semibold text-sage-700">Slack snapshot:</span> {slackSources}
-            </p>
-          ) : null}
-          {linearSources ? (
-            <p className={slackSources ? "mt-1" : ""}>
-              <span className="font-semibold text-sage-700">Linear context:</span> {linearSources}
-            </p>
-          ) : null}
-        </div>
-      )}
 
       <p className="text-base leading-relaxed text-sage-950">{sentiment.summary}</p>
 

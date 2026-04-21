@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
@@ -37,12 +38,12 @@ function Header() {
         <span className="text-sm font-bold text-sage-900">Phoenix</span>
       </div>
       <nav className="flex items-center gap-4">
-        <a
+        <Link
           href="/"
           className="rounded-lg px-3 py-1.5 text-sm font-medium text-sage-600 transition hover:bg-sage-75 hover:text-sage-900"
         >
-          Portfolio
-        </a>
+          Customers
+        </Link>
       </nav>
     </header>
   );

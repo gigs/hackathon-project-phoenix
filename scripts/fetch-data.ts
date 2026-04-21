@@ -191,6 +191,20 @@ function buildPortfolio(customers: CustomerData[]): PortfolioEntry[] {
     }
 
     const totalArr = c.deals.reduce((sum, d) => sum + (d.arr ?? 0), 0) || null;
+    const nextMilestone = [...c.milestones]
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0] ?? null;
+    const openRiskCount =
+      c.linearIssues.length +
+      c.deals.filter((deal) => deal.health === "yellow" || deal.health === "red").length;
+
+    const whyNow =
+      openRiskCount > 0
+        ? `${openRiskCount} open risk${openRiskCount === 1 ? "" : "s"} across delivery or deal health.`
+        : nextMilestone
+          ? `${nextMilestone.label} is the next visible milestone.`
+          : c.deals.length > 0
+            ? `${c.deals.length} active deal${c.deals.length === 1 ? "" : "s"} in motion.`
+            : "Low-signal account, needs more connected data.";
 
     return {
       slug: c.slug,
@@ -200,6 +214,11 @@ function buildPortfolio(customers: CustomerData[]): PortfolioEntry[] {
       totalArr,
       stages,
       topLineHealth: c.deals.map((d) => d.health),
+      driName: c.driName,
+      whyNow,
+      openRiskCount,
+      nextMilestone: nextMilestone?.label ?? null,
+      nextMilestoneDate: nextMilestone?.date ?? null,
       lastUpdated: c.lastUpdated,
     };
   });

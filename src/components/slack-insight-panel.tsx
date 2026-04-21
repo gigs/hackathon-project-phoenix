@@ -5,14 +5,14 @@ import type { SlackInsightPayload, SlackInsightRelationshipHealth } from "@/lib/
 
 const HEALTH_LABEL: Record<SlackInsightRelationshipHealth, string> = {
   green: "Healthy",
-  yellow: "Needs attention",
+  yellow: "Watch",
   red: "At risk",
 };
 
 function healthPill(status: SlackInsightRelationshipHealth) {
   const map: Record<SlackInsightRelationshipHealth, string> = {
-    green: "bg-emerald-50 text-emerald-900 border-emerald-200",
-    yellow: "bg-amber-50 text-amber-900 border-amber-200",
+    green: "bg-central-50 text-central-900 border-central-200",
+    yellow: "bg-warning/10 text-warning border-warning/30",
     red: "bg-red-50 text-red-900 border-red-200",
   };
   return map[status] ?? map.yellow;
@@ -20,19 +20,19 @@ function healthPill(status: SlackInsightRelationshipHealth) {
 
 function healthDot(status: SlackInsightRelationshipHealth) {
   const map: Record<SlackInsightRelationshipHealth, string> = {
-    green: "bg-emerald-500",
-    yellow: "bg-amber-500",
+    green: "bg-central-500",
+    yellow: "bg-warning",
     red: "bg-red-500",
   };
   return map[status] ?? map.yellow;
 }
 
 const SENTIMENT_META: Record<string, { label: string; dot: string; text: string }> = {
-  positive: { label: "Positive", dot: "bg-emerald-500", text: "text-emerald-700" },
+  positive: { label: "Positive", dot: "bg-central-500", text: "text-central-700" },
   negative: { label: "Negative", dot: "bg-red-500", text: "text-red-700" },
   neutral: { label: "Neutral", dot: "bg-sage-400", text: "text-sage-700" },
   no_signal: { label: "No signal", dot: "bg-sage-200", text: "text-sage-400" },
-  mixed: { label: "Mixed", dot: "bg-amber-500", text: "text-amber-700" },
+  mixed: { label: "Mixed", dot: "bg-warning", text: "text-warning" },
 };
 
 function sentimentMeta(s: string) {
@@ -40,8 +40,8 @@ function sentimentMeta(s: string) {
 }
 
 const SIGNAL_META: Record<string, { label: string; classes: string }> = {
-  warning: { label: "Warning", classes: "border-l-amber-500 bg-amber-50/50" },
-  momentum: { label: "Momentum", classes: "border-l-emerald-500 bg-emerald-50/50" },
+  warning: { label: "Warning", classes: "border-l-warning bg-warning/8" },
+  momentum: { label: "Momentum", classes: "border-l-central-500 bg-central-50/50" },
   opportunity: { label: "Opportunity", classes: "border-l-central-600 bg-central-50/50" },
   change: { label: "Change", classes: "border-l-sage-500 bg-sage-50/50" },
 };

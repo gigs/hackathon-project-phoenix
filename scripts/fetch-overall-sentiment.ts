@@ -5,6 +5,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
 import {
+  fetchHubSpotData,
+  type HubSpotDataForCustomer,
+} from "../src/lib/connectors/hubspot";
+import {
   fetchLinearInsightContext,
   type LinearInsightContext,
 } from "../src/lib/connectors/linear";
@@ -13,6 +17,8 @@ import {
   type SlackInsightChannelTranscript,
 } from "../src/lib/connectors/slack";
 import { loadAllCustomerConfigs, loadCustomerConfig } from "../src/lib/customer-loader";
+import { buildFallbackAccountBrief, currentArr, currentLines } from "../src/lib/customer-intelligence";
+import { loadCustomerData } from "../src/lib/data-loader";
 import {
   formatLinearInsightForPrompt,
   formatTranscriptsForPrompt,
@@ -22,13 +28,21 @@ import {
   transcriptSnapshotPath,
 } from "../src/lib/insight-format";
 import type {
+  AccountBriefPayload,
+  AccountBriefPoint,
+  AccountBriefRisk,
+  AccountBriefSource,
+  CustomerData,
   CustomerConfig,
   OverallSentimentPayload,
   OverallSentimentSignal,
   OverallSentimentSource,
   OverallSentimentSources,
 } from "../src/lib/types";
-import { OVERALL_SENTIMENT_SCHEMA_VERSION } from "../src/lib/types";
+import {
+  ACCOUNT_BRIEF_SCHEMA_VERSION,
+  OVERALL_SENTIMENT_SCHEMA_VERSION,
+} from "../src/lib/types";
 
 const DATA_CUSTOMERS_DIR = path.resolve(process.cwd(), "data", "customers");
 const DEFAULT_LOOKBACK_DAYS = 60;
@@ -52,6 +66,28 @@ Rules:
 - Base every claim on the Linear and Slack content in the user message only. Do not invent URLs, quotes, stakeholders, or events.
 - Use null for url only when the prompt explicitly allows it (e.g., silence-based warnings).
 - Do not include schema_version, generated_at, sources, or lookback_days in your output; the pipeline adds those.`;
+
+const ACCOUNT_BRIEF_SYSTEM_PROMPT = `You are building a compact executive customer brief for a dashboard.
+
+Respond with exactly one JSON object and nothing else.
+
+Your JSON must include only these root keys:
+- headline: string
+- confidence: number (0-100)
+- why_now: array of { "summary": string, "source": "slack" | "linear" | "hubspot" | "arr" | "derived", "url": string | null }
+- top_risks: array of { "summary": string, "severity": "high" | "medium" | "low", "source": "slack" | "linear" | "hubspot" | "arr" | "derived", "url": string | null }
+- next_milestone: { "label": string, "date": string | null, "owner": string | null, "source": "slack" | "linear" | "hubspot" | "arr" | "derived", "url": string | null } | null
+- commercial_state: string
+- delivery_state: string
+- stakeholder_state: string
+- citations: array of { "label": string, "source": "slack" | "linear" | "hubspot" | "arr" | "derived", "url": string | null }
+
+Rules:
+- Optimize for first-glance dashboard use. Short, specific, and grounded.
+- Use the account summary, Slack transcript context, Linear context, HubSpot/deal context, and ARR context in the user message only.
+- Confidence should reflect evidence density, not optimism.
+- Prefer concrete milestones, dates, and tracked issues over generic commentary.
+- Do not include markdown or explanation outside the JSON object.`;
 
 interface ParsedArgs {
   customer?: string;
@@ -122,6 +158,12 @@ function parseSource(raw: unknown): OverallSentimentSource {
   return raw === "linear" ? "linear" : "slack";
 }
 
+function parseAccountBriefSource(raw: unknown): AccountBriefSource {
+  return raw === "linear" || raw === "hubspot" || raw === "arr" || raw === "derived"
+    ? raw
+    : "slack";
+}
+
 function parseSignalArray(raw: unknown): OverallSentimentSignal[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((row): OverallSentimentSignal => {
@@ -153,6 +195,82 @@ function normalizePayload(
   };
 }
 
+function parseBriefPoints(raw: unknown): AccountBriefPoint[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => {
+    const x = (row as Record<string, unknown>) ?? {};
+    return {
+      summary: typeof x.summary === "string" ? x.summary : "",
+      source: parseAccountBriefSource(x.source),
+      url: x.url === null || typeof x.url === "string" ? (x.url as string | null) : null,
+    };
+  });
+}
+
+function parseBriefRisks(raw: unknown): AccountBriefRisk[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => {
+    const x = (row as Record<string, unknown>) ?? {};
+    const severity = x.severity === "low" || x.severity === "medium" ? x.severity : "high";
+    return {
+      summary: typeof x.summary === "string" ? x.summary : "",
+      severity,
+      source: parseAccountBriefSource(x.source),
+      url: x.url === null || typeof x.url === "string" ? (x.url as string | null) : null,
+    };
+  });
+}
+
+function normalizeAccountBrief(
+  raw: unknown,
+  lookbackDays: number,
+  generatedAt: string,
+): AccountBriefPayload {
+  const o = (raw as Record<string, unknown>) ?? {};
+  const milestoneRaw = (o.next_milestone as Record<string, unknown> | null) ?? null;
+  const milestone =
+    milestoneRaw && typeof milestoneRaw.label === "string"
+      ? {
+          label: milestoneRaw.label,
+          date:
+            milestoneRaw.date === null || typeof milestoneRaw.date === "string"
+              ? (milestoneRaw.date as string | null)
+              : null,
+          owner:
+            milestoneRaw.owner === null || typeof milestoneRaw.owner === "string"
+              ? (milestoneRaw.owner as string | null)
+              : null,
+          source: parseAccountBriefSource(milestoneRaw.source),
+          url:
+            milestoneRaw.url === null || typeof milestoneRaw.url === "string"
+              ? (milestoneRaw.url as string | null)
+              : null,
+        }
+      : null;
+
+  return {
+    schema_version: ACCOUNT_BRIEF_SCHEMA_VERSION,
+    generated_at: generatedAt,
+    lookback_days: lookbackDays,
+    headline: typeof o.headline === "string" ? o.headline : "",
+    confidence:
+      typeof o.confidence === "number"
+        ? Math.max(0, Math.min(100, Math.round(o.confidence)))
+        : 65,
+    why_now: parseBriefPoints(o.why_now),
+    top_risks: parseBriefRisks(o.top_risks),
+    next_milestone: milestone,
+    commercial_state: typeof o.commercial_state === "string" ? o.commercial_state : "",
+    delivery_state: typeof o.delivery_state === "string" ? o.delivery_state : "",
+    stakeholder_state: typeof o.stakeholder_state === "string" ? o.stakeholder_state : "",
+    citations: parseBriefPoints(o.citations).map((row) => ({
+      label: row.summary,
+      source: row.source,
+      url: row.url,
+    })),
+  };
+}
+
 async function callAnthropicJson(
   anthropic: Anthropic,
   model: string,
@@ -176,6 +294,47 @@ async function repairJson(anthropic: Anthropic, model: string, invalid: string):
     messages: [{ role: "user", content: `Repair this JSON:\n\n${invalid}` }],
   });
   return extractAssistantText(msg);
+}
+
+function buildAccountDataBlock(
+  slug: string,
+  config: CustomerConfig,
+  customerData: CustomerData | null,
+  hubspot: HubSpotDataForCustomer | null,
+): string {
+  const companyName = hubspot?.companyName ?? config.name;
+  const lines = customerData?.deals.map((deal) => {
+    const parts = [
+      `- ${deal.label}`,
+      `health=${deal.health}`,
+      `hubspot_stage=${deal.hubspotStage ?? "none"}`,
+      `arr=${deal.arr ?? "n/a"}`,
+      `activations=${deal.activations ?? "n/a"}`,
+      `owner=${deal.dri ?? deal.dealOwner ?? "unknown"}`,
+      `go_live=${deal.goLiveDate ?? "n/a"}`,
+      `issues=${deal.linearIssueCount}`,
+    ];
+    return parts.join(" | ");
+  }) ?? [];
+
+  const arrPoints = customerData?.arrData.slice(-4).map((point) => {
+    return `- ${point.date}: actual=${point.actual ?? "n/a"} forecast=${point.forecast ?? "n/a"} lines=${point.linesActual ?? "n/a"}`;
+  }) ?? [];
+
+  return [
+    `Customer slug: ${slug}`,
+    `Customer name: ${config.name}`,
+    `HubSpot company: ${companyName}`,
+    customerData
+      ? `Current ARR: ${currentArr(customerData) ?? "n/a"} | Current lines: ${currentLines(customerData) ?? "n/a"} | Overall health: ${customerData.health}`
+      : "Customer aggregate data unavailable.",
+    "",
+    "Tracked deals / markets:",
+    lines.length > 0 ? lines.join("\n") : "- none",
+    "",
+    "Recent ARR points:",
+    arrPoints.length > 0 ? arrPoints.join("\n") : "- none",
+  ].join("\n");
 }
 
 function buildLinearSourceCounts(context: LinearInsightContext): OverallSentimentSources["linear"] {
@@ -287,6 +446,15 @@ async function processCustomer(
   const linearBlock = formatLinearInsightForPrompt(linearContext);
   const slackBlock = formatTranscriptsForPrompt(transcripts);
   const operatorPrompt = resolvePrompt(slug, cfg);
+  const customerData = loadCustomerData(slug);
+  const hubspotSummary = customerData
+    ? null
+    : (await fetchHubSpotData(
+        config.revenue_lines.flatMap((line) => line.hubspot_deal_record_ids),
+        config.hubspot_company_record_id,
+        args.noCache,
+      )).data;
+  const accountDataBlock = buildAccountDataBlock(slug, config, customerData, hubspotSummary);
 
   const userContent = [
     `Customer account name: ${config.name}`,
@@ -331,10 +499,64 @@ async function processCustomer(
 
   const generatedAt = new Date().toISOString();
   const payload = normalizePayload(parsed, sources, lookback, generatedAt);
+  const fallbackBrief = customerData
+    ? buildFallbackAccountBrief(customerData, payload, null)
+    : null;
+  const accountBriefContent = [
+    `Customer account name: ${config.name}`,
+    `Lookback window: ${lookback} days`,
+    "",
+    "--- Account summary (aggregated customer JSON + HubSpot + ARR) ---",
+    accountDataBlock,
+    "",
+    "--- Existing relationship summary ---",
+    `Headline: ${payload.summary}`,
+    `Momentum: ${payload.momentum_signals.map((signal) => signal.summary).join(" | ") || "none"}`,
+    `Risks: ${payload.warning_signs.map((signal) => signal.summary).join(" | ") || "none"}`,
+    "",
+    "--- Linear context ---",
+    linearBlock,
+    "--- Slack transcripts ---",
+    slackBlock,
+  ].join("\n");
+
+  let accountBriefPayload: AccountBriefPayload | null = null;
+  try {
+    let rawBriefText = await anthropic.messages
+      .create({
+        model,
+        max_tokens: 8192,
+        system: ACCOUNT_BRIEF_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: accountBriefContent }],
+      })
+      .then(extractAssistantText);
+    let briefJson = stripJsonFence(rawBriefText);
+    let briefParsed: unknown;
+    try {
+      briefParsed = JSON.parse(briefJson);
+    } catch {
+      rawBriefText = await repairJson(anthropic, model, briefJson);
+      briefJson = stripJsonFence(rawBriefText);
+      briefParsed = JSON.parse(briefJson);
+    }
+    accountBriefPayload = normalizeAccountBrief(briefParsed, lookback, generatedAt);
+  } catch (error) {
+    if (fallbackBrief) {
+      console.warn(`  ${slug}: account brief generation failed — using deterministic fallback`);
+      accountBriefPayload = fallbackBrief;
+    } else {
+      throw error;
+    }
+  }
 
   const outPath = path.join(DATA_CUSTOMERS_DIR, `${slug}.overall-sentiment.json`);
   fs.writeFileSync(outPath, JSON.stringify(payload, null, 2), "utf-8");
   console.log(`✅ ${slug}: wrote ${outPath}`);
+  if (accountBriefPayload) {
+    const briefPath = path.join(DATA_CUSTOMERS_DIR, `${slug}.account-brief.json`);
+    fs.writeFileSync(briefPath, JSON.stringify(accountBriefPayload, null, 2), "utf-8");
+    console.log(`✅ ${slug}: wrote ${briefPath}`);
+  }
 }
 
 async function main() {
