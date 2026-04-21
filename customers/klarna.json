@@ -2,7 +2,8 @@
   "name": "Klarna",
   "hubspot_company_record_id": "19069457924",
   "slack_channels": [
-    "#customer-klarna"
+    "C06N5SXN00J",
+    "C06TU74L51T"
   ],
   "revenue_lines": [
     {
@@ -38,5 +39,11 @@
       "label": "Klarna forecast",
       "url": "https://docs.google.com/spreadsheets/d/1aBcDeFgHiJk..."
     }
-  ]
+  ],
+  "slack_insight": {
+    "enabled": true,
+    "prompt_file": "customers/prompts/klarna_prompt.md",
+    "lookback_days": 30,
+    "max_messages_per_channel": 300
+  }
 }

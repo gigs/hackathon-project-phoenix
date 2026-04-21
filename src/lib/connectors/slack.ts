@@ -6,7 +6,64 @@ interface SlackChannel {
   name: string;
 }
 
-async function slackFetch<T>(method: string, params: Record<string, string> = {}): Promise<T> {
+export interface SlackInsightTranscriptOptions {
+  lookbackDays: number;
+  maxMessagesPerChannel: number;
+  /** Truncate each message body for token safety. */
+  maxMessageChars: number;
+  noCache: boolean;
+}
+
+export interface SlackInsightMessage {
+  ts: string;
+  author: string;
+  text: string;
+}
+
+export interface SlackInsightChannelTranscript {
+  channelName: string;
+  /** Set when the channel was resolved; used for optional permalink lines in prompts. */
+  channelId: string | null;
+  messages: SlackInsightMessage[];
+}
+
+const SKIP_SUBTYPES = new Set([
+  "bot_message",
+  "channel_join",
+  "channel_leave",
+  "channel_topic",
+  "channel_purpose",
+  "channel_name",
+  "channel_archive",
+  "channel_unarchive",
+]);
+
+/** Pause after each Slack Web API response to reduce 429s (set `SLACK_API_MIN_INTERVAL_MS=0` to disable). */
+function slackApiMinIntervalMs(): number {
+  const raw = process.env.SLACK_API_MIN_INTERVAL_MS;
+  if (raw === "0") return 0;
+  const n = parseInt(raw ?? "550", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 550;
+}
+
+async function slackApiPause(): Promise<void> {
+  const ms = slackApiMinIntervalMs();
+  if (ms <= 0) return;
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+/** Upper bound for HTTP 429 wait (Slack often sends Retry-After: 30). Full value still respected up to this cap. */
+function slack429MaxWaitMs(): number {
+  const raw = process.env.SLACK_429_MAX_WAIT_MS;
+  const n = parseInt(raw ?? "12000", 10);
+  return Number.isFinite(n) && n >= 1000 ? n : 12000;
+}
+
+async function slackFetch<T>(
+  method: string,
+  params: Record<string, string> = {},
+  attempt = 0,
+): Promise<T> {
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token) throw new Error("SLACK_BOT_TOKEN not set");
 
@@ -17,6 +74,22 @@ async function slackFetch<T>(method: string, params: Record<string, string> = {}
     headers: { Authorization: `Bearer ${token}` },
   });
 
+  /* HTTP 429 — wait and retry (Tier-based limits); dry-run / production behave the same. */
+  const max429 = 8;
+  if (res.status === 429 && attempt < max429) {
+    await res.text(); // drain body before retrying
+    const ra = res.headers.get("retry-after");
+    const secs = ra ? parseInt(ra, 10) : Math.min(3 + attempt * 2, 60);
+    const requested = Number.isFinite(secs) ? secs * 1000 : 5000;
+    const ms = Math.min(requested, slack429MaxWaitMs());
+    console.warn(
+      `  [slack] HTTP 429 on ${method} — backing off ${Math.round(ms / 1000)}s (attempt ${attempt + 1}/${max429})`,
+    );
+    await new Promise((r) => setTimeout(r, ms));
+    await slackApiPause();
+    return slackFetch<T>(method, params, attempt + 1);
+  }
+
   if (!res.ok) {
     throw new Error(`Slack API error: ${res.status} ${res.statusText}`);
   }
@@ -26,16 +99,37 @@ async function slackFetch<T>(method: string, params: Record<string, string> = {}
     throw new Error(`Slack API error: ${json.error}`);
   }
 
+  await slackApiPause();
   return json as T;
 }
 
-async function resolveChannelId(channelName: string, noCache: boolean): Promise<string | null> {
+/** Slack channel IDs start with C; avoids heavy conversations.list pagination (fewer 429s). */
+export function looksLikeSlackChannelId(nameOrId: string): boolean {
+  const s = nameOrId.replace(/^#/, "");
+  return /^C[A-Z0-9]{8,}$/.test(s);
+}
+
+export async function resolveSlackChannelId(channelName: string, noCache: boolean): Promise<string | null> {
   const cleanName = channelName.replace(/^#/, "");
   const cacheKey = `channel-id-${cleanName}`;
 
   if (!noCache) {
     const cached = readCache<string>("slack", cacheKey);
     if (cached) return cached;
+  }
+
+  /* Direct channel ID — validate with conversations.info (one call vs paginated list). */
+  if (looksLikeSlackChannelId(cleanName)) {
+    try {
+      await slackFetch<{ channel?: { id: string } }>("conversations.info", {
+        channel: cleanName,
+      });
+      if (!noCache) writeCache("slack", cacheKey, cleanName);
+      return cleanName;
+    } catch (e) {
+      console.warn(`  [slack] conversations.info failed for ${cleanName}:`, (e as Error).message);
+      return null;
+    }
   }
 
   try {
@@ -134,8 +228,10 @@ export async function fetchSlackActivity(
   try {
     const channels: SlackChannelActivity[] = [];
 
-    for (const name of channelNames) {
-      const id = await resolveChannelId(name, noCache);
+    for (let i = 0; i < channelNames.length; i++) {
+      const name = channelNames[i];
+      if (i > 0) await slackApiPause();
+      const id = await resolveSlackChannelId(name, noCache);
       if (!id) {
         channels.push({ name, messagesLast7d: null, messagesLast30d: null });
         continue;
@@ -148,4 +244,129 @@ export async function fetchSlackActivity(
   } catch (e) {
     return { data: null, error: (e as Error).message, source: "slack" };
   }
+}
+
+function truncateText(s: string, maxChars: number): string {
+  const t = s.trim();
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, maxChars)}…`;
+}
+
+interface SlackHistoryMessage {
+  type: string;
+  user?: string;
+  text?: string;
+  ts: string;
+  subtype?: string;
+}
+
+async function fetchUserDisplayName(userId: string, noCache: boolean): Promise<string> {
+  const cacheKey = `user-display-${userId}`;
+  if (!noCache) {
+    const cached = readCache<string>("slack", cacheKey);
+    if (cached) return cached;
+  }
+  try {
+    const data = await slackFetch<{
+      user?: { real_name?: string; name?: string; profile?: { display_name?: string } };
+    }>("users.info", { user: userId });
+    const u = data.user;
+    const name = u?.real_name || u?.profile?.display_name || u?.name || userId;
+    writeCache("slack", cacheKey, name);
+    return name;
+  } catch {
+    return userId;
+  }
+}
+
+async function fetchChannelTranscriptMessages(
+  channelId: string,
+  channelName: string,
+  options: SlackInsightTranscriptOptions,
+): Promise<SlackInsightMessage[]> {
+  const now = Math.floor(Date.now() / 1000);
+  const oldestTs = now - options.lookbackDays * 24 * 60 * 60;
+  const raw: SlackHistoryMessage[] = [];
+  let cursor = "";
+
+  try {
+    do {
+      const params: Record<string, string> = {
+        channel: channelId,
+        oldest: oldestTs.toString(),
+        limit: "200",
+      };
+      if (cursor) params.cursor = cursor;
+
+      const data = await slackFetch<{
+        messages: SlackHistoryMessage[];
+        response_metadata?: { next_cursor?: string };
+      }>("conversations.history", params);
+
+      for (const msg of data.messages) {
+        if (parseFloat(msg.ts) < oldestTs) continue;
+        if (msg.subtype && SKIP_SUBTYPES.has(msg.subtype)) continue;
+        const body = msg.text?.trim();
+        if (!body) continue;
+        raw.push(msg);
+      }
+
+      cursor = data.response_metadata?.next_cursor ?? "";
+    } while (cursor);
+
+    const sortedDesc = [...raw].sort((a, b) => parseFloat(b.ts) - parseFloat(a.ts));
+    const capped = sortedDesc.slice(0, options.maxMessagesPerChannel);
+    const chronological = capped.sort((a, b) => parseFloat(a.ts) - parseFloat(b.ts));
+
+    const userIds = new Set<string>();
+    for (const m of chronological) {
+      if (m.user) userIds.add(m.user);
+    }
+
+    const displayNames = new Map<string, string>();
+    for (const uid of userIds) {
+      displayNames.set(uid, await fetchUserDisplayName(uid, options.noCache));
+    }
+
+    return chronological.map((m) => ({
+      ts: m.ts,
+      author: m.user ? displayNames.get(m.user) ?? m.user : "unknown",
+      text: truncateText(m.text ?? "", options.maxMessageChars),
+    }));
+  } catch (e) {
+    console.warn(`  [slack] Failed transcript for ${channelName}:`, (e as Error).message);
+    return [];
+  }
+}
+
+/** Bounded message history for Claude insight — does not reuse activity-count cache. */
+export async function fetchSlackTranscriptsForInsight(
+  channelNames: string[],
+  options: SlackInsightTranscriptOptions,
+): Promise<SlackInsightChannelTranscript[]> {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) throw new Error("SLACK_BOT_TOKEN not set");
+
+  const unique = [...new Set(channelNames.map((n) => n.replace(/^#/, "")))];
+  const results: SlackInsightChannelTranscript[] = [];
+
+  for (let i = 0; i < unique.length; i++) {
+    const clean = unique[i];
+    if (i > 0) await slackApiPause();
+    const forResolve = looksLikeSlackChannelId(clean)
+      ? clean.replace(/^#/, "")
+      : clean.startsWith("#")
+        ? clean
+        : `#${clean}`;
+    const channelLabel = looksLikeSlackChannelId(clean) ? clean.replace(/^#/, "") : forResolve;
+    const id = await resolveSlackChannelId(forResolve, options.noCache);
+    if (!id) {
+      results.push({ channelName: channelLabel, channelId: null, messages: [] });
+      continue;
+    }
+    const messages = await fetchChannelTranscriptMessages(id, channelLabel, options);
+    results.push({ channelName: channelLabel, channelId: id, messages });
+  }
+
+  return results;
 }

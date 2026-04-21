@@ -9,19 +9,24 @@ Phoenix is a **static site generator + dashboard** for Gigs that provides a cent
 ## Build Commands
 
 ```bash
-npm run fetch-data          # Fetch API data → writes intermediate JSON to data/
-npm run build               # Next.js static export → writes HTML to out/
-npm run build:full          # fetch-data + build in one step
-npm run dev                 # Next.js dev server (reads from data/)
-npm run serve               # Serve static output from out/
-npm run fetch-data -- --no-cache   # Force fresh API calls (skip 4h cache)
+npm run fetch-data              # Fetch API data → writes intermediate JSON to data/
+npm run fetch-slack-insight    # Slack transcripts → Claude → data/customers/<slug>.slack-insight.json (requires enabled slack_insight in customers/*.json)
+npm run build                   # Next.js static export → writes HTML to out/
+npm run build:full              # fetch-data + build in one step
+npm run build:full:insight      # fetch-data + fetch-slack-insight + build
+npm run dev                     # Next.js dev server (reads from data/)
+npm run serve                   # Serve static output from out/
+npm run fetch-data -- --no-cache           # Force fresh API calls (skip 4h cache)
+npm run fetch-slack-insight -- --no-cache # Same for Slack transcript cache + channel resolution
+npm run fetch-slack-insight -- --dry-run --customer klarna   # Log message counts only (no Anthropic call)
 ```
 
 ## Architecture
 
 **Two-step build pipeline:**
 1. `fetch-data` reads `customers/*.json`, calls API connectors (Linear, HubSpot, Slack, Lightdash), writes intermediate JSON to `data/`
-2. `next build` reads from `data/`, renders static HTML to `/out`
+2. Optional: `fetch-slack-insight` reads `slack_insight` config, pulls bounded Slack transcripts, calls **Anthropic Messages API**, writes `data/customers/<slug>.slack-insight.json` (sidecar — customer pages load it at build time if present).
+3. `next build` reads from `data/`, renders static HTML to `/out`
 
 ```
 customers/*.json          Customer index files (structured references to external systems)
@@ -32,12 +37,23 @@ scripts/fetch-data.ts     Reads configs, calls connectors, writes intermediate J
     ├→ src/lib/connectors/lightdash.ts  (CSV fallback in V1)
     └→ src/lib/connectors/slack.ts      (message counts)
     ↓
-data/                     Intermediate JSON (per-customer + portfolio summary)
+scripts/fetch-slack-insight.ts (optional)
+    └→ slack.ts transcripts + Anthropic → data/customers/<slug>.slack-insight.json
+    ↓
+data/                     Intermediate JSON (per-customer + portfolio summary + optional insight sidecars)
     ↓
 src/app/                  Next.js pages read from data/ at build time
     ↓
 out/                      Static HTML + JS + CSS (no server needed)
 ```
+
+**Privacy:** Slack transcript text and per-customer prompts are sent to Anthropic when you run `fetch-slack-insight`. Use `slack_insight.enabled` per customer and avoid secrets inside `prompt`.
+
+**Long prompts:** Put main text in `customers/prompts/<slug>.md` (or any repo-relative path) via `slack_insight.prompt_file`; optional short `prompt` string in JSON is appended after the file content. The prompt file defines analysis rules and the **JSON shape** (`health`, `stakeholders`, `updates`, `signals`); the script validates and stores **`schema_version`: 2** plus accurate `sources` and `generated_at`.
+
+**Slack permalinks in transcripts (optional):** Set `SLACK_WORKSPACE_SUBDOMAIN` (e.g. `your-workspace`) so each transcript line can include `Link: https://<subdomain>.slack.com/archives/C…/p…` for the model to cite in `url` fields.
+
+**Slack channel config:** In `customers/*.json` you can list each channel as `#name` or as a **channel ID** (`C…`). IDs are resolved with a single `conversations.info` call instead of paginating `conversations.list`, which reduces rate limits (HTTP 429) on large workspaces.
 
 ### Caching
 Raw API responses cached to `.cache/` with 4h TTL. Use `--no-cache` flag to force fresh fetches.
@@ -75,5 +91,12 @@ Defined in `DESIGN.md`. Key points:
 LINEAR_API_KEY=lin_api_...
 HUBSPOT_ACCESS_TOKEN=pat-...
 SLACK_BOT_TOKEN=xoxb-...
+SLACK_API_MIN_INTERVAL_MS=550   # optional; pause after each Slack API response (default 550; set 0 to disable)
+SLACK_429_MAX_WAIT_MS=12000     # optional; cap wait when Slack returns HTTP 429 + Retry-After (default 12000 ms)
 LIGHTDASH_API_KEY=              # unused in V1
+
+# Slack insight job (scripts/fetch-slack-insight.ts)
+ANTHROPIC_API_KEY=sk-ant-api03-...
+ANTHROPIC_MODEL=                # optional override (default claude-3-5-sonnet-20241022)
+SLACK_WORKSPACE_SUBDOMAIN=      # optional; enables permalink suffixes on transcript lines for url fields
 ```
