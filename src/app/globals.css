@@ -1,26 +1,57 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Sage — Neutral palette */
+  --color-sage-25: oklch(0.992 0.0021 197.12);
+  --color-sage-50: oklch(0.984 0.0044 179.74);
+  --color-sage-75: oklch(0.97 0.0069 174.38);
+  --color-sage-100: oklch(0.967 0.0075 164.94);
+  --color-sage-150: oklch(0.948 0.0094 171.79);
+  --color-sage-200: oklch(0.928 0.0114 176.3);
+  --color-sage-300: oklch(0.872 0.0132 185.05);
+  --color-sage-400: oklch(0.715 0.0169 216.72);
+  --color-sage-500: oklch(0.552 0.0185 221.27);
+  --color-sage-600: oklch(0.447 0.022 213.59);
+  --color-sage-700: oklch(0.378 0.0239 221.47);
+  --color-sage-800: oklch(0.28 0.0236 214.04);
+  --color-sage-900: oklch(0.213 0.0218 228.78);
+  --color-sage-950: oklch(0.154 0.0132 236.53);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Central — Primary accent (green) */
+  --color-central-25: oklch(0.994 0.0041 157.18);
+  --color-central-50: oklch(0.986 0.0066 160.08);
+  --color-central-100: oklch(0.98 0.0074 151.89);
+  --color-central-200: oklch(0.946 0.0216 154.12);
+  --color-central-300: oklch(0.886 0.0462 152.09);
+  --color-central-400: oklch(0.787 0.0693 151.9);
+  --color-central-500: oklch(0.724 0.0849 153.13);
+  --color-central-600: oklch(0.659 0.095 152.94);
+  --color-central-700: oklch(0.577 0.069 156.91);
+  --color-central-800: oklch(0.434 0.0391 166.15);
+  --color-central-900: oklch(0.254 0.0202 223.75);
+  --color-central-950: oklch(0.18 0.0114 217.17);
+
+  /* Semantic */
+  --color-success: oklch(0.659 0.095 152.94);
+  --color-warning: oklch(0.769 0.105 79.41);
+  --color-error: oklch(0.577 0.245 27.33);
+
+  /* Custom text sizes */
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.5rem;
+  --text-2xl--letter-spacing: -0.05rem;
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.9rem;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--color-sage-900);
+  background: var(--color-sage-50);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }

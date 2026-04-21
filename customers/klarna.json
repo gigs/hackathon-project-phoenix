@@ -1,0 +1,42 @@
+{
+  "name": "Klarna",
+  "hubspot_company_record_id": "19069457924",
+  "slack_channels": [
+    "#customer-klarna"
+  ],
+  "revenue_lines": [
+    {
+      "label": "Klarna US",
+      "hubspot_deal_record_ids": ["20303327145"],
+      "linear_projects": ["klarna-us-mvno-19069457924-14774e3ed18c"],
+      "slack_channels": [],
+      "lightdash_dashboards": []
+    },
+    {
+      "label": "Klarna UK",
+      "hubspot_deal_record_ids": ["37968818055"],
+      "linear_projects": ["klarna-uk-mvno-19069457924-010463626266"],
+      "slack_channels": [],
+      "lightdash_dashboards": []
+    },
+    {
+      "label": "Klarna SE",
+      "hubspot_deal_record_ids": [],
+      "linear_projects": [],
+      "slack_channels": [],
+      "lightdash_dashboards": []
+    }
+  ],
+  "linear_initiatives": [
+    "am-klarna-account-cb4fd5a5abb5"
+  ],
+  "linear_projects": [
+    "klarna-requests-eb470d6346eb"
+  ],
+  "google_sheets": [
+    {
+      "label": "Klarna forecast",
+      "url": "https://docs.google.com/spreadsheets/d/1aBcDeFgHiJk..."
+    }
+  ]
+}

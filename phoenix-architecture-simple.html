@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phoenix — Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f7f7f8;
+    color: #1a1a2e;
+    display: flex;
+    justify-content: center;
+    padding: 52px 28px 60px;
+    min-height: 100vh;
+  }
+
+  .wrap { width: 1100px; max-width: 100%; }
+
+  .hdr { margin-bottom: 40px; }
+  .hdr h1 { font-size: 18px; font-weight: 700; color: #111; letter-spacing: -0.2px; }
+  .hdr p { font-size: 12.5px; color: #888; margin-top: 5px; line-height: 1.5; }
+
+  .diagram {
+    position: relative;
+    width: 100%;
+    height: 1060px;
+  }
+
+  .diagram svg {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none; z-index: 1;
+  }
+
+  /* ── Cards ── */
+  .n {
+    position: absolute; border-radius: 12px;
+    padding: 16px 18px; z-index: 10; cursor: default;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04);
+  }
+  .n:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.06);
+  }
+  .n h3 { font-size: 13.5px; font-weight: 650; margin-bottom: 4px; }
+  .n p { font-size: 11.5px; line-height: 1.5; color: #555; }
+  .n .mono {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+    font-size: 10.5px; color: #666; margin-top: 8px; line-height: 1.55;
+  }
+
+  /* Source */
+  .n-source { background: #fff; border-left: 3px solid #6b8acd; }
+  .n-source h3 { color: #3b5998; }
+
+  /* customer.md */
+  .n-store { background: #f0faf4; border-left: 3px solid #34a862; }
+  .n-store h3 { color: #1e7a45; }
+
+  /* Build */
+  .n-script { background: #fff8f0; border-left: 3px solid #e8993e; }
+  .n-script h3 { color: #b06d1a; }
+
+  /* Output */
+  .n-output { background: #f4f0ff; border-left: 3px solid #8b6fd4; }
+  .n-output h3 { color: #5b3fa0; }
+
+  /* V2 */
+  .n-v2 { background: #fff5f6; border: 1.5px dashed #d9707e; border-left: 3px dashed #d9707e; }
+  .n-v2 h3 { color: #a8404f; }
+
+  /* V3 */
+  .n-v3 { background: #f0f7fb; border: 1.5px dashed #6baac4; border-left: 3px dashed #6baac4; }
+  .n-v3 h3 { color: #3a7d9e; }
+
+  /* Labels */
+  .label {
+    position: absolute; font-size: 9.5px; font-weight: 700;
+    letter-spacing: 1.6px; text-transform: uppercase;
+    color: #aaa; z-index: 5;
+  }
+
+  .ann {
+    position: absolute; z-index: 12;
+    font-size: 10.5px; color: #999; line-height: 1.5; max-width: 190px;
+  }
+
+  .arrow-label {
+    position: absolute; z-index: 12;
+    font-size: 9px; color: #aaa; font-weight: 500;
+    letter-spacing: 0.3px; background: #f7f7f8; padding: 0 5px;
+  }
+
+  .channel-tag {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    color: #3b5998; background: rgba(59,89,152,0.08);
+    border-radius: 5px; padding: 2px 8px; margin-top: 5px;
+    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+  }
+
+  .version-tag {
+    display: inline-block; font-size: 9px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+    border-radius: 5px; padding: 3px 9px; margin-bottom: 8px;
+  }
+  .v1-tag { color: #1e7a45; background: rgba(52,168,98,0.1); }
+  .v2-tag { color: #a8404f; background: rgba(217,112,126,0.1); }
+  .v3-tag { color: #3a7d9e; background: rgba(107,170,196,0.1); }
+
+  .hdiv {
+    position: absolute; z-index: 0;
+    border-top: 1px solid #e8e8ec;
+    width: 100%;
+  }
+
+  /* V2-tagged source */
+  .n-source-v2 { background: #fff5f6; border-left: 3px dashed #d9707e; }
+  .n-source-v2 h3 { color: #a8404f; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <h1>Phoenix — Architecture</h1>
+    <p>customer.md (account index) + live sources → build script → static site &nbsp;&middot;&nbsp; v2: agentic updates + Grain/Granola &nbsp;&middot;&nbsp; v3: quality gates</p>
+  </div>
+
+  <div class="diagram">
+
+    <!-- ══════════════════════════════════════════ -->
+    <!--  V1 — CORE FLOW                            -->
+    <!-- ══════════════════════════════════════════ -->
+
+    <div class="label" style="left:270px; top:0;">
+      <span class="version-tag v1-tag">V1</span> &nbsp; Sources → Build → Deploy
+    </div>
+
+    <!-- ── customer.md (top of sources column) ── -->
+
+    <div class="n n-store" style="left:270px; top:36px; width:195px; min-height:145px;">
+      <h3>customer.md</h3>
+      <p>One per customer. Account index — maps the customer to its resources across systems so the build script knows where to look.</p>
+      <div class="mono" style="white-space:pre;">---
+name: Klarna
+linear_projects:
+  - PRJ-klarna-us
+  - PRJ-klarna-fr
+hubspot_company_id: HS-8842
+slack_channel: project-klarna
+---
+## Notes
+Context and decisions
+not captured in any tool</div>
+    </div>
+
+    <!-- ── V1 SOURCES ── -->
+
+    <div class="n n-source" style="left:270px; top:260px; width:195px;">
+      <h3>Lightdash</h3>
+      <p>ARR actuals, subscription activations, active subs, churn metrics.</p>
+    </div>
+
+    <div class="n n-source" style="left:270px; top:342px; width:195px;">
+      <h3>Linear</h3>
+      <p>Issue status, project health, tagged items, DRI assignments.</p>
+    </div>
+
+    <div class="n n-source" style="left:270px; top:424px; width:195px;">
+      <h3>HubSpot</h3>
+      <p>Deal stages, deal owners, company data, pipeline progression.</p>
+    </div>
+
+    <div class="n n-source" style="left:270px; top:506px; width:195px;">
+      <h3>Pylon</h3>
+      <p>Customer support tickets, issue tracking, resolution status.</p>
+    </div>
+
+    <div class="n n-source" style="left:270px; top:588px; width:195px;">
+      <h3>Slack</h3>
+      <p>Status signals, blockers, milestones from mapped channel.</p>
+      <div class="channel-tag">#project-klarna</div>
+    </div>
+
+    <!-- ── V2-TAGGED SOURCE ── -->
+
+    <div class="n n-source-v2" style="left:270px; top:695px; width:195px;">
+      <h3>Grain / Granola</h3>
+      <p>Meeting transcripts, action items, verbal status updates.</p>
+      <span class="version-tag v2-tag" style="margin-top:6px;">V2 — needs human-in-the-loop</span>
+    </div>
+
+    <!-- ── BUILD ── -->
+
+    <div class="n n-script" style="left:570px; top:36px; width:230px; min-height:280px;">
+      <h3>Build script</h3>
+      <p>Reads all customer.md files as an index. Uses the IDs and references in each to pull live data from the right Lightdash dashboards, Linear projects, HubSpot deals, Pylon tickets, and Slack channels. Renders static HTML.</p>
+      <div class="mono" style="white-space:pre;">Inputs:
+ · customer.md (as index)
+ · Lightdash → ARR, activations
+ · Linear API → project status,
+   issues, health
+ · HubSpot API → deal stages,
+   pipeline data
+ · Pylon → support tickets,
+   resolution status
+ · Slack API → recent messages
+   from mapped channel
+
+Output:
+ · /dist (static HTML + JSON)</div>
+    </div>
+
+    <div class="ann" style="left:570px; top:350px;">
+      Runs on schedule or on push. No server — pure static generation.
+    </div>
+
+    <!-- ── OUTPUT ── -->
+
+    <div class="n n-output" style="left:880px; top:36px; width:190px;">
+      <h3>Static site</h3>
+      <p>Account drill-downs, portfolio view. Deployed to Vercel / S3 / Pages. Behind Google SSO.</p>
+    </div>
+
+    <div class="ann" style="left:880px; top:150px;">
+      No backend needed. Auth via Google SSO proxy. Rebuilds automatically.
+    </div>
+
+    <!-- ══════════════════════════════════════════ -->
+    <!--  V2 — AGENTIC UPDATES (left)               -->
+    <!-- ══════════════════════════════════════════ -->
+
+    <div class="n n-v2" style="left:0; top:36px; width:230px; min-height:720px;">
+      <div class="version-tag v2-tag">V2</div>
+      <h3>Agentic Update Skill</h3>
+      <p>Claude skill that watches triggers and proposes updates to customer.md index files (new project IDs, DRI changes, notes). Never writes autonomously — always human-in-the-loop.</p>
+
+      <div class="mono" style="white-space:pre; margin-top:12px;">Trigger sources:
+ · Linear webhooks
+ · HubSpot webhooks
+ · Slack #project-klarna
+ · Grain/Granola transcripts</div>
+
+      <p style="margin-top:14px;">Detects signals (new project created, deal moved, DRI changed, action item from meeting) and proposes a customer.md index update via Slack DM to the DRI.</p>
+
+      <div class="mono" style="white-space:pre; margin-top:12px;">Flow:
+ Signal detected
+   ↓
+ Claude drafts update
+   ↓
+ Slack DM → DRI
+   ↓ approve
+ customer.md updated
+   ↓ reject
+ change discarded</div>
+
+      <p style="margin-top:14px; color:#aaa; font-style:italic; font-size:10.5px;">Requires: Claude skill with customer.md schema awareness + Slack MCP for DM approval flow.</p>
+
+      <p style="margin-top:12px; color:#aaa; font-style:italic; font-size:10.5px;">Grain/Granola is V2-only because meeting transcripts need human review before acting on them — too noisy for automated processing.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════ -->
+    <!--  V3 — QUALITY GATES (bottom)                -->
+    <!-- ══════════════════════════════════════════ -->
+
+    <div class="hdiv" style="top:800px;"></div>
+
+    <div class="n n-v3" style="left:0px; top:830px; width:1070px; min-height:130px;">
+      <div class="version-tag v3-tag">V3</div>
+      <h3>Assess Quality — Skill</h3>
+      <p>Claude skill that checks whether a customer meets defined quality gates by cross-referencing all relevant sources. Run on-demand or on schedule per customer.</p>
+
+      <div class="mono" style="white-space:pre; margin-top:10px;">Sources checked:                          Example gates:
+ · customer.md (account index)             · Linear projects linked?
+ · Lightdash (actuals present?)            · Test project created in Linear?
+ · Linear (project exists? issues open?)   · SOW status ≥ drafted?
+ · HubSpot (deal stage consistent?)        · Figma received?
+ · Pylon (open tickets? resolution time?)  · Slack external channel active?
+ · Slack (external channel active?)        · Deal stage in HubSpot matches Linear status?
+ · Google Sheets (forecast entered?)       · Pylon tickets resolved within SLA?
+                                           · Forecast data present in Sheets?
+Output:
+ · Quality report per customer
+ · Pass / fail per gate
+ · Surfaced in dashboard or Slack</div>
+    </div>
+
+    <!-- ══════════════════════════════════════════ -->
+    <!--  SVG CONNECTIONS                            -->
+    <!-- ══════════════════════════════════════════ -->
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ab" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+          <polygon points="0 0, 6 2, 0 4" fill="rgba(107,138,205,0.5)"/>
+        </marker>
+        <marker id="ag" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+          <polygon points="0 0, 6 2, 0 4" fill="rgba(52,168,98,0.5)"/>
+        </marker>
+        <marker id="ao" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+          <polygon points="0 0, 6 2, 0 4" fill="rgba(232,153,62,0.5)"/>
+        </marker>
+        <marker id="ap" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+          <polygon points="0 0, 6 2, 0 4" fill="rgba(139,111,212,0.5)"/>
+        </marker>
+        <marker id="ar" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+          <polygon points="0 0, 6 2, 0 4" fill="rgba(217,112,126,0.5)"/>
+        </marker>
+        <marker id="aq" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+          <polygon points="0 0, 6 2, 0 4" fill="rgba(107,170,196,0.5)"/>
+        </marker>
+      </defs>
+
+      <!-- customer.md → Build script (solid green — primary input) -->
+      <path d="M465,110 L570,80" stroke="rgba(52,168,98,0.35)" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+
+      <!-- V1 Sources → Build script (dashed blue — at build time) -->
+      <path d="M465,295 Q520,295 520,120 L570,120" stroke="rgba(107,138,205,0.2)" stroke-width="1.5" fill="none" marker-end="url(#ab)" stroke-dasharray="5,3"/>
+      <path d="M465,375 Q525,375 525,140 L570,140" stroke="rgba(107,138,205,0.2)" stroke-width="1.5" fill="none" marker-end="url(#ab)" stroke-dasharray="5,3"/>
+      <path d="M465,458 Q530,458 530,160 L570,160" stroke="rgba(107,138,205,0.2)" stroke-width="1.5" fill="none" marker-end="url(#ab)" stroke-dasharray="5,3"/>
+      <path d="M465,540 Q535,540 535,180 L570,180" stroke="rgba(107,138,205,0.2)" stroke-width="1.5" fill="none" marker-end="url(#ab)" stroke-dasharray="5,3"/>
+      <path d="M465,624 Q540,624 540,200 L570,200" stroke="rgba(107,138,205,0.2)" stroke-width="1.5" fill="none" marker-end="url(#ab)" stroke-dasharray="5,3"/>
+
+      <!-- Build script → Static site -->
+      <path d="M800,120 L880,80" stroke="rgba(139,111,212,0.35)" stroke-width="2" fill="none" marker-end="url(#ap)"/>
+
+      <!-- V2 → customer.md (proposed writes) -->
+      <path d="M230,140 L270,120" stroke="rgba(217,112,126,0.3)" stroke-width="1.5" fill="none" marker-end="url(#ar)" stroke-dasharray="5,3"/>
+
+      <!-- V2 watches V1 sources (arrows from sources into V2) -->
+      <path d="M270,375 L230,375" stroke="rgba(217,112,126,0.18)" stroke-width="1" fill="none" marker-end="url(#ar)" stroke-dasharray="4,3"/>
+      <path d="M270,458 L230,458" stroke="rgba(217,112,126,0.18)" stroke-width="1" fill="none" marker-end="url(#ar)" stroke-dasharray="4,3"/>
+      <path d="M270,624 L230,624" stroke="rgba(217,112,126,0.18)" stroke-width="1" fill="none" marker-end="url(#ar)" stroke-dasharray="4,3"/>
+
+      <!-- V2 watches Grain/Granola -->
+      <path d="M270,730 L230,730" stroke="rgba(217,112,126,0.18)" stroke-width="1" fill="none" marker-end="url(#ar)" stroke-dasharray="4,3"/>
+
+      <!-- V3 reads from customer.md + all sources (arrows down) -->
+      <path d="M370,195 Q244,195 244,860 L270,860" stroke="rgba(107,170,196,0.18)" stroke-width="1" fill="none" marker-end="url(#aq)" stroke-dasharray="4,3"/>
+      <path d="M370,340 Q248,340 248,868 L270,868" stroke="rgba(107,170,196,0.18)" stroke-width="1" fill="none" marker-end="url(#aq)" stroke-dasharray="4,3"/>
+      <path d="M370,420 Q252,420 252,876 L270,876" stroke="rgba(107,170,196,0.18)" stroke-width="1" fill="none" marker-end="url(#aq)" stroke-dasharray="4,3"/>
+      <path d="M370,500 Q256,500 256,884 L270,884" stroke="rgba(107,170,196,0.18)" stroke-width="1" fill="none" marker-end="url(#aq)" stroke-dasharray="4,3"/>
+      <path d="M370,580 Q260,580 260,892 L270,892" stroke="rgba(107,170,196,0.18)" stroke-width="1" fill="none" marker-end="url(#aq)" stroke-dasharray="4,3"/>
+      <path d="M370,668 Q264,668 264,900 L270,900" stroke="rgba(107,170,196,0.18)" stroke-width="1" fill="none" marker-end="url(#aq)" stroke-dasharray="4,3"/>
+    </svg>
+
+    <!-- Arrow labels -->
+    <div class="arrow-label" style="left:475px; top:82px;">index</div>
+    <div class="arrow-label" style="left:500px; top:240px;">at build time</div>
+    <div class="arrow-label" style="left:815px; top:88px;">/dist</div>
+    <div class="arrow-label" style="left:234px; top:124px;">propose</div>
+    <div class="arrow-label" style="left:234px; top:360px;">watch</div>
+    <div class="arrow-label" style="left:234px; top:444px;">watch</div>
+    <div class="arrow-label" style="left:234px; top:610px;">watch</div>
+    <div class="arrow-label" style="left:234px; top:716px;">watch</div>
+    <div class="arrow-label" style="left:228px; top:846px;">check all</div>
+
+  </div>
+</div>
+</body>
+</html>

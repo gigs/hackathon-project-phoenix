@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Phoenix — Data Architecture v3</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #08080d;
+    color: #e0e0e8;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Top bar */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 52px;
+    background: rgba(8,8,13,0.94);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px;
+    z-index: 100;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+  .topbar h1 { font-size: 14px; font-weight: 600; letter-spacing: 0.4px; color: #fff; }
+  .topbar .version { font-size: 11px; color: #666; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px; }
+  .legend { display: flex; gap: 18px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #777; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Tab bar */
+  .tabbar {
+    position: fixed; top: 52px; left: 0; right: 0;
+    height: 36px;
+    background: rgba(8,8,13,0.9);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: flex; align-items: center;
+    padding: 0 28px; gap: 4px;
+    z-index: 99;
+  }
+  .tab {
+    font-size: 11px; color: #555; padding: 6px 14px;
+    border-radius: 6px; cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+  }
+  .tab:hover { color: #999; background: rgba(255,255,255,0.03); }
+  .tab.active {
+    color: #ccc; background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  /* Canvas */
+  #canvas {
+    position: absolute;
+    top: 88px; left: 0; right: 0; bottom: 0;
+    overflow: auto;
+    cursor: grab;
+  }
+  #canvas:active { cursor: grabbing; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  #diagram-full {
+    position: relative;
+    width: 2100px;
+    height: 1350px;
+    margin: 40px;
+  }
+
+  #diagram-cdl {
+    position: relative;
+    width: 1500px;
+    height: 1100px;
+    margin: 40px;
+  }
+
+  #diagram-schema {
+    position: relative;
+    width: 1200px;
+    height: 1000px;
+    margin: 40px;
+  }
+
+  /* SVG lines */
+  .lines-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* Nodes */
+  .node {
+    position: absolute;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 12px;
+    z-index: 10;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+    cursor: pointer;
+    min-width: 140px;
+  }
+  .node:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    z-index: 20;
+  }
+  .node h3 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .node p { font-size: 11px; line-height: 1.45; opacity: 0.7; }
+  .node .badge {
+    display: inline-block; font-size: 9px; font-weight: 600;
+    padding: 1px 6px; border-radius: 3px; margin-top: 6px;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+
+  /* Node types */
+  .node-source { background: rgba(50,60,85,0.55); border: 1px solid rgba(100,130,180,0.25); }
+  .node-source h3 { color: #8ab4f8; }
+
+  .node-agent { background: rgba(75,48,25,0.5); border: 1px solid rgba(255,160,80,0.25); }
+  .node-agent h3 { color: #ffb366; }
+
+  .node-cdl { background: rgba(30,75,55,0.5); border: 1px solid rgba(60,190,110,0.3); }
+  .node-cdl h3 { color: #5fd99a; }
+
+  .node-phoenix { background: rgba(65,35,85,0.5); border: 1px solid rgba(150,110,240,0.25); }
+  .node-phoenix h3 { color: #b89aff; }
+
+  .node-future { background: rgba(40,40,50,0.4); border: 1px dashed rgba(255,255,255,0.12); }
+  .node-future h3 { color: #888; }
+  .node-future p { opacity: 0.45; }
+
+  .node-approval { background: rgba(85,35,55,0.45); border: 1px solid rgba(255,90,120,0.25); }
+  .node-approval h3 { color: #ff8da1; }
+
+  .node-schema { background: rgba(25,35,50,0.6); border: 1px solid rgba(80,120,180,0.3); }
+  .node-schema h3 { color: #7aadee; font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace; }
+  .node-schema p { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10.5px; }
+  .node-schema .field { color: #66d99a; }
+  .node-schema .type { color: #888; }
+  .node-schema .req { color: #ff8da1; font-size: 9px; }
+  .node-schema .opt { color: #666; font-size: 9px; }
+  .node-schema .ext { color: #ffb366; font-size: 9px; }
+
+  /* Tier containers */
+  .tier {
+    position: absolute;
+    border-radius: 16px;
+    z-index: 0;
+  }
+  .tier-cdl {
+    background: rgba(30,75,55,0.08);
+    border: 1.5px solid rgba(60,190,110,0.15);
+  }
+  .tier-phoenix {
+    background: rgba(65,35,85,0.06);
+    border: 1.5px solid rgba(150,110,240,0.12);
+  }
+  .tier-future {
+    background: rgba(255,255,255,0.01);
+    border: 1.5px dashed rgba(255,255,255,0.06);
+  }
+  .tier-label {
+    position: absolute;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    padding: 0 10px;
+  }
+  .tier-cdl .tier-label { color: rgba(60,190,110,0.4); top: -8px; left: 20px; background: #08080d; }
+  .tier-phoenix .tier-label { color: rgba(150,110,240,0.4); top: -8px; left: 20px; background: #08080d; }
+  .tier-future .tier-label { color: rgba(255,255,255,0.15); top: -8px; left: 20px; background: #08080d; }
+
+  /* Section headers */
+  .section-header {
+    position: absolute;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    color: rgba(255,255,255,0.2);
+    z-index: 5;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    display: none; position: fixed;
+    background: rgba(16,16,24,0.97);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-size: 12px; line-height: 1.55;
+    max-width: 340px; z-index: 200;
+    box-shadow: 0 16px 56px rgba(0,0,0,0.7);
+    pointer-events: none;
+  }
+  .tooltip.visible { display: block; }
+  .tooltip h4 { color: #fff; font-size: 13px; margin-bottom: 8px; }
+  .tooltip p { color: #999; }
+  .tooltip .tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.06);
+    border-radius: 4px; padding: 2px 7px;
+    font-size: 10px; color: #aaa;
+    margin-top: 8px; margin-right: 4px;
+  }
+
+  /* Lane divider */
+  .lane-div {
+    position: absolute;
+    border-left: 1px dashed rgba(255,255,255,0.04);
+    height: 100%; z-index: 0;
+  }
+
+  /* Annotation callouts */
+  .anno {
+    position: absolute; z-index: 12;
+    font-size: 10px; color: rgba(255,255,255,0.3);
+    line-height: 1.4;
+    max-width: 160px;
+    border-left: 2px solid rgba(255,255,255,0.08);
+    padding-left: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <h1>Project Phoenix — Data Architecture</h1>
+    <span class="version">v3 — April 2026</span>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#8ab4f8;"></div> Source</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ffb366;"></div> Agent</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#5fd99a;"></div> CDL (foundation)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#b89aff;"></div> Phoenix</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#888;border:1px dashed #555;"></div> Future consumers</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ff8da1;"></div> Human-in-the-loop</div>
+  </div>
+</div>
+
+<div class="tabbar">
+  <div class="tab active" data-view="full">Full Architecture</div>
+  <div class="tab" data-view="cdl">CDL Detail</div>
+  <div class="tab" data-view="schema">Schema Spec</div>
+</div>
+
+<div id="canvas">
+
+<!-- ╔═══════════════════════════════════════════════════════════╗ -->
+<!-- ║  VIEW 1: FULL ARCHITECTURE                                ║ -->
+<!-- ╚═══════════════════════════════════════════════════════════╝ -->
+<div id="diagram-full" class="view active">
+
+  <!-- Lane dividers -->
+  <div class="lane-div" style="left:310px;"></div>
+  <div class="lane-div" style="left:680px;"></div>
+  <div class="lane-div" style="left:1320px;"></div>
+
+  <!-- Section headers -->
+  <div class="section-header" style="left:40px; top:10px;">DATA SOURCES</div>
+  <div class="section-header" style="left:340px; top:10px;">INGESTION LAYER</div>
+  <div class="section-header" style="left:710px; top:10px;">CUSTOMER DATA LAYER (CDL)</div>
+  <div class="section-header" style="left:1350px; top:10px;">CONSUMERS</div>
+
+  <!-- ═══ TIER CONTAINERS ═══ -->
+
+  <!-- CDL tier -->
+  <div class="tier tier-cdl" style="left:690px; top:35px; width:600px; height:740px;">
+    <span class="tier-label">Customer Data Layer — Foundation</span>
+  </div>
+
+  <!-- Phoenix tier -->
+  <div class="tier tier-phoenix" style="left:1340px; top:35px; width:340px; height:450px;">
+    <span class="tier-label">Phoenix Dashboard</span>
+  </div>
+
+  <!-- Future consumers tier -->
+  <div class="tier tier-future" style="left:1340px; top:510px; width:340px; height:270px;">
+    <span class="tier-label">Future Consumers</span>
+  </div>
+
+  <!-- Write-back area -->
+  <div class="tier" style="left:1700px; top:35px; width:360px; height:740px; border-radius:16px; background:rgba(85,35,55,0.05); border:1.5px solid rgba(255,90,120,0.1);">
+    <span class="tier-label" style="color:rgba(255,90,120,0.35); top:-8px; left:20px; background:#08080d;">Write-Back &amp; Approval</span>
+  </div>
+
+  <!-- ═══════════════ SOURCES ═══════════════ -->
+
+  <div class="node node-source" style="left:40px; top:60px; width:230px;"
+       data-tip="Primary communication channel. Claude monitors channels and threads for status signals, blockers, milestone updates, and sentiment.|Channels: Customer externals, #project-phoenix, team channels|Input to: Signal Detector (real-time), Pull Script (history)">
+    <h3>Slack</h3>
+    <p>Channels, threads, external channels — primary signal source</p>
+  </div>
+
+  <div class="node node-source" style="left:40px; top:165px; width:230px;"
+       data-tip="Source of truth for planned work. Each account = Initiative with workstream projects. BAU project is the canonical record per account.|Key data: Issue status, project health, assignees, labels, milestones|Sync: Webhooks + REST API">
+    <h3>Linear</h3>
+    <p>Issues, projects, initiatives — planned work per account</p>
+  </div>
+
+  <div class="node node-source" style="left:40px; top:270px; width:230px;"
+       data-tip="System of record for deals. One deal per country per product type. Stages: Open Leads → Pursuing → Prospects → S1–S4 → Closed Won/Lost.|Key data: Deal stage, owner, company, amount, close date|Sync: REST API + webhooks">
+    <h3>HubSpot</h3>
+    <p>Deals, pipeline stages, deal ownership</p>
+  </div>
+
+  <div class="node node-source" style="left:40px; top:375px; width:230px;"
+       data-tip="Source of truth for actuals. Christopher confirmed metrics are exposable from the data warehouse.|Key data: ARR, subscription activations, active subs, churn|Sync: BigQuery API / scheduled exports">
+    <h3>BigQuery / Lightdash</h3>
+    <p>ARR actuals, activations, active subs</p>
+  </div>
+
+  <div class="node node-source" style="left:40px; top:480px; width:230px;"
+       data-tip="Source of truth for forecasts and GTM tracking. Tilly's customer-level sheets + Partner Marketing Promo Calendar (Notion).|Key data: Revenue forecasts, GTM milestones, campaign dates|Sync: Google Sheets API (read-only)">
+    <h3>Google Sheets</h3>
+    <p>Forecasts, GTM tracking, campaigns</p>
+  </div>
+
+  <div class="node node-source" style="left:40px; top:585px; width:230px;"
+       data-tip="Meeting recordings and transcripts. Extracts action items and status updates discussed verbally.|Key data: Summaries, action items, verbal updates|Sync: API or transcript export">
+    <h3>Grain / Granola</h3>
+    <p>Meeting transcripts, action items</p>
+  </div>
+
+  <!-- ═══════════════ INGESTION ═══════════════ -->
+
+  <div class="node node-agent" style="left:340px; top:70px; width:300px;"
+       data-tip="Claude agent monitoring Slack channels + system webhooks (Linear, HubSpot) for signals that warrant a customer record update. Runs continuously.|Inputs: Slack messages (real-time), Linear webhooks, HubSpot webhooks, Grain transcripts|Detection: Status changes, blocker mentions, milestone completions, sentiment shifts, deal stage moves|Output: Proposed update → routed through Multi-Project Router → CDL">
+    <h3>Claude — Signal Detector</h3>
+    <p>Monitors Slack + system webhooks. Detects status-relevant signals continuously.</p>
+    <span class="badge" style="background:rgba(255,160,80,0.15); color:#ffb366;">Real-time</span>
+  </div>
+
+  <div class="node node-agent" style="left:340px; top:210px; width:300px;"
+       data-tip="Routes incoming signals to the correct customer.md and the right deal/project within it. Critical for multi-project accounts (Klarna US vs Klarna FR, etc.).|Logic: Company name → customer.md mapping, deal/project ID lookup, Slack channel → account mapping|Handles: Disambiguation, new-customer detection, unknown-signal quarantine">
+    <h3>Multi-Project Router</h3>
+    <p>Maps signals to correct customer + deal. Disambiguates multi-project accounts.</p>
+  </div>
+
+  <div class="node node-agent" style="left:340px; top:370px; width:300px;"
+       data-tip="Scheduled script that pulls structured data from all quantitative sources and writes it into the core schema fields of each customer.md.|Runs: Hourly (configurable) + on-demand trigger|Sources: BigQuery (actuals), HubSpot (deals), Google Sheets (forecasts), Linear (project status)|Writes to: Core schema fields only (ARR, deal stages, activations, forecasts)">
+    <h3>Pull Script</h3>
+    <p>Scheduled pull from structured sources → populates core schema fields in each customer.md.</p>
+    <span class="badge" style="background:rgba(255,160,80,0.15); color:#ffb366;">Hourly</span>
+  </div>
+
+  <div class="node node-agent" style="left:340px; top:530px; width:300px;"
+       data-tip="Weekly Claude agent that reads all customer.md files and compiles a scorecard summary for each account. Writes the scorecard section back into customer.md and pushes a compact tile to Slack.|Runs: Weekly (Monday 8am)|Reads: All customer.md files|Writes: Scorecard section in each customer.md + Slack tile">
+    <h3>Claude — Scorecard Compiler</h3>
+    <p>Weekly: reads all customer.md files, writes scorecard section, pushes Slack tiles.</p>
+    <span class="badge" style="background:rgba(255,160,80,0.15); color:#ffb366;">Weekly</span>
+  </div>
+
+  <!-- ═══════════════ CDL — CUSTOMER DATA LAYER ═══════════════ -->
+
+  <!-- customer.md files -->
+  <div class="node node-cdl" style="left:720px; top:70px; width:270px; min-height:170px;"
+       data-tip="The canonical store. One .md file per customer with YAML frontmatter (core schema) + markdown sections. Any tool can read/write with an audit trail.|Structure: YAML frontmatter (strict core fields) + ## sections (Deals, Actuals, Forecasts, Notes, Scorecard, Extensions)|Access: Open read/write with audit — all changes logged|Examples: klarna.md, santander.md, revolut.md, bbva.md">
+    <h3>customer.md files</h3>
+    <p>One file per customer. YAML frontmatter (core schema) + structured sections + freeform extensions zone.</p>
+    <p style="margin-top:8px; opacity:0.4; font-style:italic;">klarna.md · santander.md · revolut.md · ...</p>
+    <span class="badge" style="background:rgba(60,190,110,0.15); color:#5fd99a;">Canonical store</span>
+  </div>
+
+  <!-- Schema spec -->
+  <div class="node node-cdl" style="left:720px; top:280px; width:270px;"
+       data-tip="Formal definition of core fields in YAML frontmatter + required sections. Core fields are strict and versioned. Extensions zone is freeform — new tools can add sections without changing the spec.|Core: customer, region, vertical, health, DRI, deals[], ARR, activations|Sections: ## Deals, ## Actuals, ## Forecasts, ## Notes, ## Scorecard|Extensions: ## ext:* (any tool can add custom sections)">
+    <h3>Schema Spec</h3>
+    <p>Core fields: strict, versioned. Extension zones: freeform, convention-based. Consumers validate core, tolerate extensions.</p>
+    <span class="badge" style="background:rgba(60,190,110,0.15); color:#5fd99a;">Schema + soft zones</span>
+  </div>
+
+  <!-- Audit log -->
+  <div class="node node-cdl" style="left:720px; top:420px; width:270px;"
+       data-tip="Every write to any customer.md is logged: who/what wrote it, when, what changed (diff), and from what source signal. Open write access is safe because everything is traceable.|Fields: timestamp, source (pull-script | claude-signal | claude-scorecard | dri-edit | tool-name), diff, customer, section|Storage: Git commits + inline ## Changelog section|Use: Audit, rollback, learning loops, debugging">
+    <h3>Audit Log</h3>
+    <p>Every write is logged — source, timestamp, diff. Git-backed. Enables rollback and learning loops.</p>
+    <span class="badge" style="background:rgba(60,190,110,0.15); color:#5fd99a;">Open write + audit</span>
+  </div>
+
+  <!-- CDL API / Reader -->
+  <div class="node node-cdl" style="left:720px; top:560px; width:270px;"
+       data-tip="Thin read layer that parses customer.md files and exposes structured data to consumers. Could be a simple script that parses YAML + markdown, or a lightweight API.|Capabilities: List all customers, get single customer, query by field (region, health, vertical), full-text search across notes|Consumers call this instead of parsing .md files directly — allows schema evolution without breaking consumers.">
+    <h3>CDL Reader API</h3>
+    <p>Thin read layer — parses .md files, exposes structured data. Consumers don't parse raw markdown.</p>
+    <span class="badge" style="background:rgba(60,190,110,0.15); color:#5fd99a;">Read interface</span>
+  </div>
+
+  <!-- Approval Queue (lives inside CDL) -->
+  <div class="node node-cdl" style="left:1020px; top:130px; width:240px;"
+       data-tip="Pending proposed changes from Claude (or any agent) that haven't been approved yet. Part of the CDL infrastructure — not Phoenix-specific.|Fields: customer, field/section, old value, proposed value, source signal, confidence, DRI, status|Lifecycle: Proposed → DRI notified via Slack → Approved/Rejected → Applied/Discarded">
+    <h3>Approval Queue</h3>
+    <p>Proposed changes awaiting DRI approval. Infrastructure-level — serves any consumer.</p>
+  </div>
+
+  <!-- ═══════════════ PHOENIX CONSUMERS ═══════════════ -->
+
+  <div class="node node-phoenix" style="left:1370px; top:70px; width:280px;"
+       data-tip="Primary Phoenix view: single-customer page with header (name, health, ARR chart), deals table (one row per deal/market), and notes panel.|Reads from: CDL Reader API|Auth: Google SSO (Gigs only)|Lead: Ethan">
+    <h3>Account Drill-Down</h3>
+    <p>Single-customer page — header, deals table, ARR charts, notes panel. Default landing.</p>
+  </div>
+
+  <div class="node node-phoenix" style="left:1370px; top:190px; width:280px;"
+       data-tip="All accounts table. Filterable by stage, health, AM model, vertical, product, region. For leadership and cross-cutting analysis.|Reads from: CDL Reader API (all customers, frontmatter fields)|Filters: Stage, health, DRI, vertical, region, product">
+    <h3>Portfolio View</h3>
+    <p>All-accounts table — filterable by health, stage, vertical, region. Leadership view.</p>
+  </div>
+
+  <div class="node node-phoenix" style="left:1370px; top:310px; width:280px;"
+       data-tip="Compact scorecard tiles posted to Slack weekly. Link back to the dashboard. Drive people to the dashboard instead of repackaging info in Slack.|Written by: Scorecard Compiler|Channel: Customer-relevant Slack channels">
+    <h3>Slack Scorecard Tiles</h3>
+    <p>Weekly tiles posted to Slack — drive people to the dashboard. No repackaging.</p>
+  </div>
+
+  <div class="node node-phoenix" style="left:1370px; top:405px; width:280px;"
+       data-tip="Aggregated functional health view across all accounts. Not part of V1 core build but leverages CDL infrastructure directly.|Status: V2|Data: Aggregated from CDL Reader API">
+    <h3>Functional Scorecard</h3>
+    <p>Aggregated health across accounts. V2 — same CDL, separate build.</p>
+    <span class="badge" style="background:rgba(150,110,240,0.12); color:#9977dd;">V2</span>
+  </div>
+
+  <!-- ═══════════════ FUTURE CONSUMERS ═══════════════ -->
+
+  <div class="node node-future" style="left:1370px; top:540px; width:280px;"
+       data-tip="Claude agent that reads a customer.md before a scheduled call and generates a one-page brief: recent status changes, open blockers, ARR trend, suggested talking points.|Reads from: CDL Reader API|Trigger: Calendar event detection">
+    <h3>Meeting Brief Generator</h3>
+    <p>Auto-generates customer briefs before calls. Reads CDL, outputs one-pager.</p>
+    <span class="badge" style="background:rgba(255,255,255,0.06); color:#777;">Future</span>
+  </div>
+
+  <div class="node node-future" style="left:1370px; top:645px; width:280px;"
+       data-tip="Louisa's automated account overviews, Max's Linear automation, Tilly's GTM trackers — these existing efforts could read from and write to CDL instead of maintaining their own data sources.|Reads from + writes to: CDL (via API + audit log)|Benefit: Additive rather than parallel — each tool enriches the shared substrate">
+    <h3>Existing Team Tools</h3>
+    <p>Louisa's overviews, Max's automations, Tilly's trackers — read/write CDL instead of own sources.</p>
+    <span class="badge" style="background:rgba(255,255,255,0.06); color:#777;">Future</span>
+  </div>
+
+  <div class="node node-future" style="left:1370px; top:730px; width:280px;"
+       data-tip="Any future tool that needs customer context: churn prediction models, QBR deck generators, partner reporting, onboarding automation, etc. All read from CDL.|Pattern: Read CDL → process → output (or write back to CDL via extensions zone)|Benefit: New tools don't require new data pipelines — they plug into the CDL">
+    <h3>Unknown Future Tools</h3>
+    <p>Churn models, QBR generators, partner reports — plug in via CDL reader + extensions.</p>
+    <span class="badge" style="background:rgba(255,255,255,0.06); color:#777;">Designed for</span>
+  </div>
+
+  <!-- ═══════════════ WRITE-BACK / APPROVAL ═══════════════ -->
+
+  <div class="node node-approval" style="left:1730px; top:70px; width:300px;"
+       data-tip="Claude sends a Slack DM to the DRI with the proposed change, source context, and approve/reject buttons. Inline in Slack — no context-switching needed.|Flow: Proposed change in Approval Queue → Slack DM to DRI → Approve/Reject inline|Timeout: 24h reminder, then flagged in dashboard|Not Phoenix-specific: this is CDL infrastructure">
+    <h3>DRI Approval (Slack DM)</h3>
+    <p>Claude DMs the DRI with proposed change + context. Approve/reject inline in Slack.</p>
+  </div>
+
+  <div class="node node-approval" style="left:1730px; top:220px; width:300px;"
+       data-tip="Approved changes are written back to the originating source system (Linear, HubSpot) to keep everything in sync. Agent-originated writes are marked to prevent circular triggers.|Targets: Linear API, HubSpot API|Safety: Source-tagged writes to prevent feedback loops">
+    <h3>Write-Back to Sources</h3>
+    <p>Approved changes sync back to Linear / HubSpot. Source-tagged to prevent loops.</p>
+  </div>
+
+  <div class="node node-approval" style="left:1730px; top:360px; width:300px;"
+       data-tip="DRIs can directly edit qualitative fields (notes, callouts, tagged issues) via the dashboard or by editing customer.md directly. No approval needed — they are the authority. All edits still logged in audit trail.|Editable: Notes, callouts, tagged Linear issues, extension sections|Not editable: Core quantitative fields (owned by pull script)">
+    <h3>DRI Direct Edits</h3>
+    <p>DRIs edit notes and callouts directly — no approval needed. All edits still audited.</p>
+  </div>
+
+  <div class="node node-approval" style="left:1730px; top:500px; width:300px;"
+       data-tip="Any new tool or agent that wants to write to CDL follows this contract: write to customer.md (core or extensions), log to audit trail, follow schema spec for core fields. No gatekeeping — just the audit contract.|Contract: 1) Write valid data, 2) Log source + timestamp + diff, 3) Core fields must match schema, 4) Extensions are freeform|Result: Any tool can enrich the CDL without permission — the audit trail is the safety net">
+    <h3>Open Write Contract</h3>
+    <p>Any tool can write to CDL. Contract: valid data + audit log entry. No gatekeeping — audit trail is the safety net.</p>
+    <span class="badge" style="background:rgba(255,90,120,0.12); color:#ff8da1;">Key principle</span>
+  </div>
+
+  <!-- ═══════════════ ANNOTATIONS ═══════════════ -->
+
+  <div class="anno" style="left:1020px; top:430px;">
+    Schema versioned. Breaking changes to core fields require consumer migration. Extension zones are append-only.
+  </div>
+
+  <div class="anno" style="left:1020px; top:560px;">
+    Thin layer — could be a Python script or a simple HTTP API. Decouples consumers from .md file format.
+  </div>
+
+  <!-- ═══════════════ SVG CONNECTIONS ═══════════════ -->
+  <svg class="lines-svg" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="a-blue" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+        <polygon points="0 0, 7 2.5, 0 5" fill="rgba(120,180,255,0.45)"/>
+      </marker>
+      <marker id="a-orange" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+        <polygon points="0 0, 7 2.5, 0 5" fill="rgba(255,160,80,0.45)"/>
+      </marker>
+      <marker id="a-green" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+        <polygon points="0 0, 7 2.5, 0 5" fill="rgba(60,190,110,0.45)"/>
+      </marker>
+      <marker id="a-purple" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+        <polygon points="0 0, 7 2.5, 0 5" fill="rgba(150,110,240,0.45)"/>
+      </marker>
+      <marker id="a-pink" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+        <polygon points="0 0, 7 2.5, 0 5" fill="rgba(255,90,120,0.45)"/>
+      </marker>
+    </defs>
+
+    <!-- ─── Sources → Signal Detector ─── -->
+    <path d="M270,95 L340,105" stroke="rgba(120,180,255,0.25)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+    <path d="M270,195 Q310,195 310,130 L340,125" stroke="rgba(120,180,255,0.25)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+    <path d="M270,300 Q310,300 310,140 L340,140" stroke="rgba(120,180,255,0.25)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+    <path d="M270,615 Q310,615 310,155 L340,155" stroke="rgba(120,180,255,0.2)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+    <!-- ─── Sources → Pull Script ─── -->
+    <path d="M270,200 Q305,200 305,395 L340,395" stroke="rgba(120,180,255,0.25)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+    <path d="M270,305 Q300,305 300,400 L340,400" stroke="rgba(120,180,255,0.25)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+    <path d="M270,410 L340,410" stroke="rgba(120,180,255,0.25)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+    <path d="M270,515 Q300,515 300,420 L340,420" stroke="rgba(120,180,255,0.25)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+    <!-- ─── Signal Detector → Router ─── -->
+    <path d="M490,160 L490,210" stroke="rgba(255,160,80,0.3)" stroke-width="2" fill="none" marker-end="url(#a-orange)"/>
+
+    <!-- ─── Router → Approval Queue (proposed changes) ─── -->
+    <path d="M640,250 Q700,250 700,60 Q700,50 1080,50 Q1140,50 1140,130" stroke="rgba(255,160,80,0.25)" stroke-width="2" fill="none" marker-end="url(#a-orange)" stroke-dasharray="6,4"/>
+
+    <!-- ─── Pull Script → customer.md (direct write) ─── -->
+    <path d="M640,400 Q680,400 680,200 L720,180" stroke="rgba(255,160,80,0.3)" stroke-width="2" fill="none" marker-end="url(#a-orange)"/>
+
+    <!-- ─── Scorecard Compiler reads customer.md ─── -->
+    <path d="M720,230 Q695,230 695,565 L640,565" stroke="rgba(120,180,255,0.2)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+    <!-- ─── Scorecard Compiler writes back to customer.md ─── -->
+    <path d="M530,530 Q530,510 700,510 Q720,490 800,350 L820,350" stroke="rgba(255,160,80,0.25)" stroke-width="2" fill="none" marker-end="url(#a-orange)" stroke-dasharray="4,3"/>
+
+    <!-- ─── Scorecard Compiler → Slack tiles ─── -->
+    <path d="M640,580 Q1200,580 1200,350 L1370,350" stroke="rgba(255,160,80,0.2)" stroke-width="1.5" fill="none" marker-end="url(#a-orange)"/>
+
+    <!-- ─── CDL Reader → Phoenix consumers ─── -->
+    <path d="M990,590 Q1200,590 1200,110 L1370,110" stroke="rgba(60,190,110,0.25)" stroke-width="2" fill="none" marker-end="url(#a-green)"/>
+    <path d="M990,600 Q1190,600 1190,230 L1370,230" stroke="rgba(60,190,110,0.25)" stroke-width="2" fill="none" marker-end="url(#a-green)"/>
+    <path d="M990,610 Q1180,610 1180,440 L1370,440" stroke="rgba(60,190,110,0.2)" stroke-width="1.5" fill="none" marker-end="url(#a-green)" stroke-dasharray="4,3"/>
+
+    <!-- ─── CDL Reader → Future consumers ─── -->
+    <path d="M990,630 Q1160,630 1160,575 L1370,575" stroke="rgba(255,255,255,0.08)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)" stroke-dasharray="4,3"/>
+    <path d="M990,640 Q1150,640 1150,680 L1370,680" stroke="rgba(255,255,255,0.08)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)" stroke-dasharray="4,3"/>
+    <path d="M990,650 Q1140,650 1140,770 L1370,770" stroke="rgba(255,255,255,0.08)" stroke-width="1.5" fill="none" marker-end="url(#a-blue)" stroke-dasharray="4,3"/>
+
+    <!-- ─── Approval Queue → DRI Slack DM ─── -->
+    <path d="M1260,170 Q1300,170 1300,50 Q1300,40 1650,40 Q1700,40 1700,90 L1730,100" stroke="rgba(255,90,120,0.2)" stroke-width="2" fill="none" marker-end="url(#a-pink)" stroke-dasharray="6,4"/>
+
+    <!-- ─── DRI Approval → customer.md (approved changes written) ─── -->
+    <path d="M1730,130 Q1710,130 1710,30 Q1710,20 860,20 L860,70" stroke="rgba(255,90,120,0.2)" stroke-width="2" fill="none" marker-end="url(#a-pink)" stroke-dasharray="6,4"/>
+
+    <!-- ─── DRI Approval → Write-back ─── -->
+    <path d="M1880,170 L1880,220" stroke="rgba(255,90,120,0.2)" stroke-width="2" fill="none" marker-end="url(#a-pink)"/>
+
+    <!-- ─── Write-back → Sources (Linear, HubSpot) ─── -->
+    <path d="M1730,280 Q1710,280 1710,870 Q1710,890 160,890 Q130,890 130,305 L130,230" stroke="rgba(255,90,120,0.12)" stroke-width="1.5" fill="none" marker-end="url(#a-pink)" stroke-dasharray="6,4"/>
+
+    <!-- ─── DRI Direct Edits → customer.md ─── -->
+    <path d="M1730,400 Q1710,400 1710,850 Q1710,860 860,860 Q840,860 840,250 L840,240" stroke="rgba(255,90,120,0.15)" stroke-width="1.5" fill="none" marker-end="url(#a-pink)" stroke-dasharray="5,3"/>
+
+    <!-- ─── Open Write Contract → Audit Log ─── -->
+    <path d="M1730,550 Q1710,550 1710,830 Q1710,840 830,840 Q810,840 810,480 L810,460" stroke="rgba(255,90,120,0.12)" stroke-width="1.5" fill="none" marker-end="url(#a-pink)" stroke-dasharray="5,3"/>
+
+    <!-- ─── customer.md → Audit Log (all writes logged) ─── -->
+    <path d="M850,240 L850,420" stroke="rgba(60,190,110,0.15)" stroke-width="1.5" fill="none" marker-end="url(#a-green)"/>
+
+    <!-- ─── customer.md → Schema Spec (validates against) ─── -->
+    <path d="M860,240 Q860,265 860,280" stroke="rgba(60,190,110,0.1)" stroke-width="1" fill="none" stroke-dasharray="3,3"/>
+  </svg>
+
+</div>
+
+<!-- ╔═══════════════════════════════════════════════════════════╗ -->
+<!-- ║  VIEW 2: CDL DETAIL                                       ║ -->
+<!-- ╚═══════════════════════════════════════════════════════════╝ -->
+<div id="diagram-cdl" class="view">
+
+  <div class="tier tier-cdl" style="left:30px; top:35px; width:1440px; height:1020px;">
+    <span class="tier-label">Customer Data Layer — Internal Architecture</span>
+  </div>
+
+  <div class="section-header" style="left:60px; top:55px;">FILE STRUCTURE</div>
+  <div class="section-header" style="left:550px; top:55px;">INTERFACES</div>
+  <div class="section-header" style="left:1050px; top:55px;">GOVERNANCE</div>
+
+  <!-- File structure -->
+  <div class="node node-cdl" style="left:60px; top:90px; width:420px; min-height:240px;"
+       data-tip="Each customer.md has three zones: YAML frontmatter (core schema), markdown sections (structured content), and extension sections (freeform).|Frontmatter is machine-parsed. Sections are markdown with expected headings. Extensions use the ## ext: prefix convention.">
+    <h3>customer.md anatomy</h3>
+    <p style="font-family:'SF Mono','Fira Code',monospace; font-size:10.5px; white-space:pre; line-height:1.6; opacity:0.8;">---
+name: Klarna
+region: EU
+vertical: BNPL
+health: green
+dri: david.frenkel
+arr_current: 240000
+am_model: strategic
+---
+
+## Deals
+| Deal | Market | Stage | Status | DRI |
+| ...  |  ...   |  ...  |  ...   | ... |
+
+## Actuals
+(ARR, activations from BigQuery)
+
+## Forecasts
+(from Google Sheets)
+
+## Notes &amp; Issues
+(tagged Linear issues + DRI free-text)
+
+## Scorecard
+(weekly compiled summary)
+
+## Changelog
+(timestamped audit entries)
+
+## ext:gtm-tracker
+(Tilly's GTM extension data)
+
+## ext:meeting-briefs
+(auto-generated pre-call briefs)</p>
+  </div>
+
+  <div class="node node-cdl" style="left:60px; top:400px; width:420px;"
+       data-tip="The file system structure — one directory containing all customer.md files, the schema spec, and meta files.|Git-backed for version control. Each write = commit with source metadata.">
+    <h3>Directory layout</h3>
+    <p style="font-family:'SF Mono','Fira Code',monospace; font-size:10.5px; white-space:pre; line-height:1.6; opacity:0.8;">cdl/
+├── schema.yaml          # core schema definition
+├── customers/
+│   ├── klarna.md
+│   ├── santander.md
+│   ├── revolut.md
+│   ├── bbva.md
+│   └── ...
+├── queue/
+│   └── pending.json     # approval queue
+└── meta/
+    └── extensions.yaml  # registered extensions</p>
+  </div>
+
+  <!-- Interfaces -->
+  <div class="node node-cdl" style="left:550px; top:90px; width:420px; min-height:140px;"
+       data-tip="Write interface contract. Any tool or human can write to CDL by following these rules.|1. Core fields: must match schema.yaml types and enums|2. New sections: use ## ext:name prefix|3. Audit: include source, timestamp in commit message|4. Validation: core fields validated on write; extensions pass through">
+    <h3>Write Contract</h3>
+    <p><strong style="color:#ff8da1;">Rule 1:</strong> Core frontmatter fields must match schema.yaml types and enums</p>
+    <p><strong style="color:#ff8da1;">Rule 2:</strong> New sections use <code style="color:#ffb366;">## ext:name</code> prefix — no spec change needed</p>
+    <p><strong style="color:#ff8da1;">Rule 3:</strong> Every write logged with source + timestamp (git commit metadata)</p>
+    <p><strong style="color:#ff8da1;">Rule 4:</strong> Core fields validated on write; extension fields pass through</p>
+  </div>
+
+  <div class="node node-cdl" style="left:550px; top:290px; width:420px; min-height:120px;"
+       data-tip="Read interface — thin API layer that parses customer.md files and returns structured data. Decouples consumers from markdown format.|Endpoints: list_customers(), get_customer(name), query(filters), search(text)|Returns: Parsed YAML + section content as structured objects">
+    <h3>Read API</h3>
+    <p><span style="color:#5fd99a; font-family:monospace;">list_customers()</span> — all customers, frontmatter only</p>
+    <p><span style="color:#5fd99a; font-family:monospace;">get_customer(name)</span> — full parsed customer record</p>
+    <p><span style="color:#5fd99a; font-family:monospace;">query(filters)</span> — filter by region, health, vertical, stage, DRI</p>
+    <p><span style="color:#5fd99a; font-family:monospace;">search(text)</span> — full-text search across notes and issues</p>
+    <p><span style="color:#5fd99a; font-family:monospace;">get_extensions(name, ext)</span> — read a specific extension section</p>
+  </div>
+
+  <div class="node node-cdl" style="left:550px; top:475px; width:420px;"
+       data-tip="Event system that notifies consumers when customer.md files change. Enables reactive workflows without polling.|Events: customer.updated, customer.created, field.changed(field_name), extension.updated(ext_name)|Delivery: File watcher + webhook or pub/sub">
+    <h3>Change Events</h3>
+    <p>Consumers can subscribe to change events instead of polling. Enables reactive workflows.</p>
+    <p style="margin-top:6px; font-family:monospace; font-size:10.5px; color:#5fd99a;">customer.updated · field.changed · extension.updated</p>
+  </div>
+
+  <!-- Governance -->
+  <div class="node node-cdl" style="left:1050px; top:90px; width:380px;"
+       data-tip="Schema versioning rules. Core schema changes are versioned (v1, v2, ...). Adding new core fields = minor version. Changing/removing = major version requiring consumer migration.|Extension sections: no versioning needed — they're conventions between the writing tool and its consumers.">
+    <h3>Schema Versioning</h3>
+    <p>Core schema uses semver. Adding fields = minor bump. Changing/removing = major bump + consumer migration. Extensions are unversioned.</p>
+  </div>
+
+  <div class="node node-cdl" style="left:1050px; top:220px; width:380px;"
+       data-tip="Git-backed audit trail. Every write operation creates a commit with structured metadata in the commit message.|Format: [source:pull-script] Updated ARR for klarna.md|Queryable: git log --author, git log --grep for source filtering|Rollback: git revert for any bad write">
+    <h3>Git-Backed Audit</h3>
+    <p>Every write = git commit with source tag. Queryable, diffable, revertable. The safety net for open write access.</p>
+  </div>
+
+  <div class="node node-cdl" style="left:1050px; top:370px; width:380px;"
+       data-tip="Extension registry — optional file that documents what extensions exist, who owns them, and their expected structure.|Purpose: Discoverability — new tool builders can see what extensions already exist|Not enforced: just documentation. Extensions work without registration.">
+    <h3>Extension Registry</h3>
+    <p>Optional catalog of known extensions. Helps tool builders discover existing data before adding their own. Not enforced.</p>
+  </div>
+
+  <div class="node node-cdl" style="left:1050px; top:500px; width:380px;"
+       data-tip="Validation rules applied on write (or via CI) to ensure core schema integrity.|Checks: Required fields present, enum values valid, types correct, deal IDs unique|Non-blocking for extensions: extension sections skip validation entirely">
+    <h3>Validation</h3>
+    <p>Core field validation on every write. Extensions pass through unchecked. Can run as pre-commit hook or CI step.</p>
+  </div>
+
+  <!-- SVG connections for CDL detail view -->
+  <svg class="lines-svg" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="a2-green" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+        <polygon points="0 0, 7 2.5, 0 5" fill="rgba(60,190,110,0.4)"/>
+      </marker>
+    </defs>
+    <path d="M480,200 L550,160" stroke="rgba(60,190,110,0.15)" stroke-width="1.5" fill="none" marker-end="url(#a2-green)"/>
+    <path d="M480,250 L550,340" stroke="rgba(60,190,110,0.15)" stroke-width="1.5" fill="none" marker-end="url(#a2-green)"/>
+    <path d="M970,160 L1050,140" stroke="rgba(60,190,110,0.12)" stroke-width="1.5" fill="none" marker-end="url(#a2-green)"/>
+    <path d="M970,200 L1050,270" stroke="rgba(60,190,110,0.12)" stroke-width="1.5" fill="none" marker-end="url(#a2-green)"/>
+    <path d="M970,400 L1050,530" stroke="rgba(60,190,110,0.12)" stroke-width="1.5" fill="none" marker-end="url(#a2-green)"/>
+  </svg>
+</div>
+
+<!-- ╔═══════════════════════════════════════════════════════════╗ -->
+<!-- ║  VIEW 3: SCHEMA SPEC                                      ║ -->
+<!-- ╚═══════════════════════════════════════════════════════════╝ -->
+<div id="diagram-schema" class="view">
+
+  <div class="section-header" style="left:40px; top:15px;">CORE SCHEMA (STRICT)</div>
+  <div class="section-header" style="left:440px; top:15px;">SECTIONS (STRUCTURED)</div>
+  <div class="section-header" style="left:850px; top:15px;">EXTENSIONS (SOFT)</div>
+
+  <div class="node node-schema" style="left:40px; top:50px; width:360px; min-height:300px;"
+       data-tip="YAML frontmatter fields. These are strictly typed and validated. Consumers can rely on these always being present and correctly formatted.">
+    <h3>frontmatter (YAML)</h3>
+    <p style="white-space:pre; line-height:2;">
+<span class="field">name</span>: <span class="type">string</span> <span class="req">required</span>
+<span class="field">slug</span>: <span class="type">string</span> <span class="req">required</span>  <span class="type"># filename key</span>
+<span class="field">region</span>: <span class="type">enum[EU,US,LATAM,APAC]</span> <span class="req">required</span>
+<span class="field">vertical</span>: <span class="type">string</span> <span class="req">required</span>
+<span class="field">am_model</span>: <span class="type">enum[strategic,scale,self-serve]</span> <span class="req">required</span>
+<span class="field">health</span>: <span class="type">enum[green,yellow,red,grey]</span> <span class="req">required</span>
+<span class="field">dri</span>: <span class="type">string</span> <span class="req">required</span>  <span class="type"># email or handle</span>
+<span class="field">arr_current</span>: <span class="type">number</span> <span class="opt">optional</span>
+<span class="field">arr_forecast</span>: <span class="type">number</span> <span class="opt">optional</span>
+<span class="field">active_subs</span>: <span class="type">number</span> <span class="opt">optional</span>
+<span class="field">hubspot_id</span>: <span class="type">string</span> <span class="opt">optional</span>
+<span class="field">linear_initiative_id</span>: <span class="type">string</span> <span class="opt">optional</span>
+<span class="field">schema_version</span>: <span class="type">string</span> <span class="req">required</span>  <span class="type"># e.g. "1.0"</span></p>
+  </div>
+
+  <div class="node node-schema" style="left:40px; top:450px; width:360px;"
+       data-tip="Early lifecycle fields for presales accounts (pre-S2). Based on Cees's sync with David Frenkel.">
+    <h3>early_lifecycle (frontmatter)</h3>
+    <p style="white-space:pre; line-height:2;">
+<span class="field">go_live_probability</span>: <span class="type">enum[no,low,med,high,confirmed]</span>
+<span class="field">go_live_date</span>: <span class="type">date</span>  <span class="type"># realistic/pessimistic</span>
+<span class="field">go_live_definition</span>: <span class="type">string</span>  <span class="type"># "first 100 lines"</span>
+<span class="field">sow_status</span>: <span class="type">enum[none,drafted,finalized,agreed]</span>
+<span class="field">test_project_created</span>: <span class="type">boolean</span>
+<span class="field">figma_received</span>: <span class="type">boolean</span>
+<span class="field">contract_signed</span>: <span class="type">boolean</span>
+<span class="field">slack_channel_active</span>: <span class="type">boolean</span></p>
+  </div>
+
+  <!-- Sections -->
+  <div class="node node-schema" style="left:440px; top:50px; width:360px;"
+       data-tip="## Deals section. Markdown table with one row per deal/market. Populated by pull script from HubSpot.">
+    <h3>## Deals</h3>
+    <p style="white-space:pre; line-height:2;">
+<span class="type">Markdown table. One row per deal/market.</span>
+<span class="field">deal_id</span>: <span class="type">string</span>  <span class="type"># HubSpot deal ID</span>
+<span class="field">market</span>: <span class="type">string</span>  <span class="type"># e.g. "US", "FR"</span>
+<span class="field">product</span>: <span class="type">string</span>
+<span class="field">stage</span>: <span class="type">enum[lead,pursuing,...,s4,won,lost,paused]</span>
+<span class="field">status</span>: <span class="type">enum[green,yellow,red]</span>  <span class="type"># from Linear</span>
+<span class="field">dri</span>: <span class="type">string</span>
+<span class="field">arr</span>: <span class="type">number</span>
+<span class="field">forecast</span>: <span class="type">number</span></p>
+  </div>
+
+  <div class="node node-schema" style="left:440px; top:290px; width:360px;"
+       data-tip="## Actuals section. Time-series data from BigQuery. Populated by pull script.">
+    <h3>## Actuals</h3>
+    <p style="white-space:pre; line-height:1.8;">
+<span class="type">Time-series from BigQuery.</span>
+<span class="field">arr_history</span>: <span class="type">date→number pairs</span>
+<span class="field">activations</span>: <span class="type">date→number pairs</span>
+<span class="field">active_subs_history</span>: <span class="type">date→number pairs</span>
+<span class="field">churn</span>: <span class="type">date→number pairs</span></p>
+  </div>
+
+  <div class="node node-schema" style="left:440px; top:470px; width:360px;"
+       data-tip="## Notes & Issues section. Mix of auto-tagged Linear issues and free-text DRI notes.">
+    <h3>## Notes &amp; Issues</h3>
+    <p style="white-space:pre; line-height:1.8;">
+<span class="type">Two input paths:</span>
+<span class="field">Tagged Linear issues</span>: <span class="type">auto-synced, clickable</span>
+<span class="field">DRI free-text notes</span>: <span class="type">manually written</span>
+<span class="field">ℹ️ Callouts</span>: <span class="type">time-boxed flags, DRI removes</span></p>
+  </div>
+
+  <div class="node node-schema" style="left:440px; top:640px; width:360px;"
+       data-tip="## Scorecard and ## Changelog sections.">
+    <h3>## Scorecard · ## Changelog</h3>
+    <p style="white-space:pre; line-height:1.8;">
+<span class="field">Scorecard</span>: <span class="type">weekly compiled summary (by Claude)</span>
+<span class="field">Changelog</span>: <span class="type">timestamped entries</span>
+  <span class="type">format: [date] [source] description</span></p>
+  </div>
+
+  <!-- Extensions -->
+  <div class="node node-schema" style="left:850px; top:50px; width:320px;"
+       data-tip="Extension sections use the ## ext: prefix. Any tool can add new extensions without changing the core schema. The extension registry documents known extensions but doesn't enforce them.">
+    <h3>## ext:* convention</h3>
+    <p>Freeform sections prefixed with <code style="color:#ffb366;">## ext:</code>. Any tool can create new ones. Documented in extension registry but not enforced.</p>
+    <p style="margin-top:10px; white-space:pre; line-height:1.8;">
+<span class="ext">Example extensions:</span>
+<span class="field">## ext:gtm-tracker</span>
+  <span class="type">Tilly's GTM milestones and dates</span>
+
+<span class="field">## ext:meeting-briefs</span>
+  <span class="type">Auto-generated pre-call briefs</span>
+
+<span class="field">## ext:account-overview</span>
+  <span class="type">Louisa's automated summaries</span>
+
+<span class="field">## ext:linear-automation</span>
+  <span class="type">Max's Linear sync metadata</span>
+
+<span class="field">## ext:churn-signals</span>
+  <span class="type">Future: ML-detected risk indicators</span></p>
+  </div>
+
+  <div class="node node-schema" style="left:850px; top:420px; width:320px;"
+       data-tip="How the schema evolves over time. Core changes are versioned and require consumer updates. Extensions are append-only and don't affect the schema version.">
+    <h3>Evolution rules</h3>
+    <p style="white-space:pre; line-height:1.8;">
+<span class="field">Adding</span> core field → <span class="type">minor version bump</span>
+<span class="field">Changing</span> core field → <span class="type">major version + migration</span>
+<span class="field">Removing</span> core field → <span class="type">major version + migration</span>
+
+<span class="field">Adding</span> extension → <span class="type">no version change</span>
+<span class="field">Changing</span> extension → <span class="type">owner's responsibility</span>
+<span class="field">Removing</span> extension → <span class="type">owner's responsibility</span>
+
+<span class="type">Consumers check schema_version in</span>
+<span class="type">frontmatter to know what to expect.</span></p>
+  </div>
+
+  <!-- SVG connections for schema view -->
+  <svg class="lines-svg" xmlns="http://www.w3.org/2000/svg">
+    <path d="M400,200 L440,120" stroke="rgba(80,120,180,0.12)" stroke-width="1" fill="none" stroke-dasharray="3,3"/>
+    <path d="M400,300 L440,400" stroke="rgba(80,120,180,0.12)" stroke-width="1" fill="none" stroke-dasharray="3,3"/>
+    <path d="M800,150 L850,120" stroke="rgba(80,120,180,0.12)" stroke-width="1" fill="none" stroke-dasharray="3,3"/>
+  </svg>
+</div>
+
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip">
+  <h4 id="tip-title"></h4>
+  <p id="tip-body"></p>
+  <div id="tip-tags"></div>
+</div>
+
+<script>
+  // Tab switching
+  const tabs = document.querySelectorAll('.tab');
+  const views = document.querySelectorAll('.view');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      views.forEach(v => v.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('diagram-' + tab.dataset.view).classList.add('active');
+    });
+  });
+
+  // Tooltip
+  const tooltip = document.getElementById('tooltip');
+  const tipTitle = document.getElementById('tip-title');
+  const tipBody = document.getElementById('tip-body');
+  const tipTags = document.getElementById('tip-tags');
+
+  document.querySelectorAll('.node[data-tip]').forEach(node => {
+    node.addEventListener('mouseenter', () => {
+      const parts = node.dataset.tip.split('|');
+      tipTitle.textContent = node.querySelector('h3').textContent;
+      tipBody.innerHTML = parts[0];
+      tipTags.innerHTML = parts.slice(1).map(t => `<span class="tag">${t.trim()}</span> `).join('');
+      tooltip.classList.add('visible');
+    });
+    node.addEventListener('mousemove', (e) => {
+      const x = e.clientX + 16, y = e.clientY + 16;
+      const r = tooltip.getBoundingClientRect();
+      tooltip.style.left = (x + r.width > window.innerWidth ? e.clientX - r.width - 12 : x) + 'px';
+      tooltip.style.top = (y + r.height > window.innerHeight ? e.clientY - r.height - 12 : y) + 'px';
+    });
+    node.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+  });
+
+  // Pan
+  const canvas = document.getElementById('canvas');
+  let pan = false, sx, sy, sl, st;
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.node')) return;
+    pan = true; sx = e.pageX; sy = e.pageY; sl = canvas.scrollLeft; st = canvas.scrollTop;
+  });
+  canvas.addEventListener('mouseup', () => pan = false);
+  canvas.addEventListener('mouseleave', () => pan = false);
+  canvas.addEventListener('mousemove', (e) => {
+    if (!pan) return; e.preventDefault();
+    canvas.scrollLeft = sl - (e.pageX - sx);
+    canvas.scrollTop = st - (e.pageY - sy);
+  });
+</script>
+
+</body>
+</html>

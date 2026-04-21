@@ -1,0 +1,42 @@
+{
+  "name": "Revolut",
+  "hubspot_company_record_id": "36930979171",
+  "slack_channels": [
+    "#customer-revolut"
+  ],
+  "revenue_lines": [
+    {
+      "label": "Revolut UK",
+      "hubspot_deal_record_ids": ["10326868488"],
+      "linear_projects": [
+        "revolut-mobile-implementation-tracker-36930979171-00f79b1e5e31"
+      ],
+      "slack_channels": [
+        "#ext-gigs-revolut-testing-feedback",
+        "#temp-revolut-production-testing",
+        "#temp-feed-revolut-support",
+        "#ext-revolut-mobile-webhook-alerts"
+      ],
+      "lightdash_dashboards": []
+    },
+    {
+      "label": "Revolut Ireland",
+      "hubspot_deal_record_ids": [],
+      "linear_projects": [],
+      "slack_channels": [],
+      "lightdash_dashboards": []
+    }
+  ],
+  "linear_initiatives": [
+    "am-revolut-account-05769e519aa1"
+  ],
+  "linear_projects": [
+    "revolut-bau-a7f49af5899d",
+    "revolut-tech-debt-5a54a68c64f3",
+    "subs-revolut-tech-debt-cleanup-58a9564b0f31",
+    "revolut-launch-changes-ad3d8f5cd378",
+    "support-process-ramp-up-for-revolut-launch-b61433897419",
+    "tracker-revolut-can-launch-to-an-intro-audience-9e30d04f44f0"
+  ],
+  "google_sheets": []
+}
