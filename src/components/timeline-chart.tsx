@@ -194,10 +194,10 @@ const HEALTH_COLORS: Record<HealthStatus, string> = {
 };
 
 const HEALTH_LABELS: Record<HealthStatus, string> = {
-  green: "On Track",
-  yellow: "At Risk",
-  red: "Off Track",
-  gray: "No Data",
+  green: "Healthy",
+  yellow: "Watch",
+  red: "At Risk",
+  gray: "Unknown",
 };
 
 export function TimelineChart({

@@ -8,6 +8,9 @@ The dashboard already shows mechanical Linear status (project state, flagged iss
 
 Klarna Mobile only — Klarna-branded consumer postpaid plans shipped via the Gigs API. Live in the US; UK, Sweden, France, and Germany launches planned late 2026 into early 2027, all Gigs-dependent on market availability, eSIM provisioning, and regulatory posture. A Klarna Roaming product on Gigs Roaming connectivity is also in scope.
 
+
+Ignore Klarna HR / employee mobile lines. Do not take into account anything about Employee lines, HR lines, employee phone plans, corporate porting, etc. This usually involves Aleksandr and Mauro. For example, ignore anything about Italy, becuase Italy is employee phone plans only, and this is not the scope of the task at hand. 
+
 Ignore Klarna HR / employee mobile lines.
 
 ## Strategic context
@@ -75,11 +78,11 @@ One sentence on overall sentiment. Form: lead with the dominant assessment, then
 
 ### `momentum_signals`
 
-0–5 entries. Relational positive signals: enthusiasm, proactive Klarna behavior, warm reactions to Gigs work, leaning-in language, expansion talk, sustained engagement from key stakeholders.
+0–3 entries. Relational positive signals: enthusiasm, proactive Klarna behavior, warm reactions to Gigs work, leaning-in language, expansion talk, sustained engagement from key stakeholders.
 
 ### `warning_signs`
 
-0–5 entries. Relational friction signals even where no formal blocker exists: tone shifts, repeated asks unacknowledged, key stakeholder silence on open threads, hedging from a previously enthusiastic voice, frustration in `#ext-gigs-klarna` that hasn't been escalated.
+0–3 entries. Relational friction signals even where no formal blocker exists: tone shifts, repeated asks unacknowledged, key stakeholder silence on open threads, hedging from a previously enthusiastic voice, frustration in `#ext-gigs-klarna` that hasn't been escalated.
 
 For both arrays:
 

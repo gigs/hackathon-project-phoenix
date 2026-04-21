@@ -12,9 +12,9 @@ const COLORS: Record<HealthStatus, string> = {
 
 const LABELS: Record<HealthStatus, string> = {
   green: "Healthy",
-  yellow: "At Risk",
-  red: "Critical",
-  gray: "No Data",
+  yellow: "Watch",
+  red: "At Risk",
+  gray: "Unknown",
 };
 
 function formatDate(iso: string): string {
@@ -92,7 +92,7 @@ export function HealthDot({
           <div className="mb-2 flex items-center justify-between">
             <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-3xs font-semibold ${
               status === "green" ? "bg-central-50 text-central-700"
-                : status === "yellow" ? "bg-amber-50 text-amber-700"
+                : status === "yellow" ? "bg-warning/15 text-warning"
                 : status === "red" ? "bg-red-50 text-red-700"
                 : "bg-sage-75 text-sage-500"
             }`}>

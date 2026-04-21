@@ -17,75 +17,86 @@ function linearInitiativeUrl(slug: string) {
   return `https://linear.app/${LINEAR_ORG}/initiative/${slug}`;
 }
 
-export function CustomerHeader({ data }: { data: CustomerData }) {
-  const totalSlackMsgs = data.slackActivity.channels.reduce(
-    (sum, ch) => sum + (ch.messagesLast7d ?? 0),
-    0,
-  );
-
+export function CustomerHeader({
+  data,
+  actions,
+}: {
+  data: CustomerData;
+  actions?: React.ReactNode;
+}) {
   const initiativeSlug = data.config.linear_initiatives[0];
   const hubspotUrl = data.config.hubspot_company_record_id
     ? hubspotCompanyUrl(data.config.hubspot_company_record_id)
     : null;
+  const updated = new Date(data.lastUpdated).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
   return (
-    <div className="flex items-center justify-between rounded-xl border border-sage-200 bg-white px-6 py-4">
-      {/* Left: Customer identity */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-central-200 text-base font-bold text-central-800">
-          {data.config.name[0]}
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-sage-950">{data.config.name}</h1>
-            <HealthDot status={data.health} showLabel />
+    <section className="rounded-xl border border-sage-200 bg-white px-6 py-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="text-3xs font-semibold uppercase tracking-[0.16em] text-sage-500">
+            Customers / {data.config.name}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-sage-500">
-              {data.deals.length} {data.deals.length === 1 ? "deal" : "deals"}
-            </span>
-            {data.driName && (
-              <span className="flex items-center gap-1.5 text-xs text-sage-500">
-                <span className="text-sage-300">·</span>
-                {data.driAvatarUrl ? (
-                  <img src={data.driAvatarUrl} alt={data.driName} className="h-5 w-5 rounded-full" />
-                ) : (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-central-100 text-3xs font-semibold text-central-700">
-                    {data.driName.split(/\s+/).map(w => w[0]).join("").slice(0, 2)}
-                  </span>
-                )}
-                {data.driName}
-              </span>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-central-200 text-lg font-bold text-central-900">
+              {data.config.name[0]}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-3xl font-bold tracking-tight text-sage-950">
+                  {data.config.name}
+                </h1>
+                <HealthDot status={data.health} showLabel />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <MetaPill label={`${data.deals.length} ${data.deals.length === 1 ? "deal" : "deals"}`} />
+                {data.driName ? <MetaPill label={`DRI: ${data.driName}`} /> : null}
+                <MetaPill label={`Updated ${updated}`} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-start gap-3 lg:items-end">
+          {actions}
+          <div className="flex items-center gap-1.5">
+            {data.config.slack_channels.length > 0 && (
+              <IconLink
+                href={slackUrl(data.config.slack_channels[0])}
+                title={`Slack: ${data.config.slack_channels[0]}`}
+                icon="/slack.svg"
+              />
+            )}
+            {data.config.hubspot_company_record_id && (
+              <IconLink
+                href={hubspotUrl ?? undefined}
+                title="Open in HubSpot"
+                icon="/hubspot-icon.svg"
+              />
+            )}
+            {initiativeSlug && (
+              <IconLink
+                href={linearInitiativeUrl(initiativeSlug)}
+                title="Open in Linear"
+                icon="/linear-logo.svg"
+              />
             )}
           </div>
         </div>
       </div>
+    </section>
+  );
+}
 
-      {/* Right: Quick links as icon buttons */}
-      <div className="flex items-center gap-1.5">
-        {data.config.slack_channels.length > 0 && (
-          <IconLink
-            href={slackUrl(data.config.slack_channels[0])}
-            title={`Slack: ${data.config.slack_channels[0]}`}
-            icon="/slack.svg"
-          />
-        )}
-        {data.config.hubspot_company_record_id && (
-          <IconLink
-            href={hubspotUrl ?? undefined}
-            title="Open in HubSpot"
-            icon="/hubspot-icon.svg"
-          />
-        )}
-        {initiativeSlug && (
-          <IconLink
-            href={linearInitiativeUrl(initiativeSlug)}
-            title="Open in Linear"
-            icon="/linear-logo.svg"
-          />
-        )}
-      </div>
-    </div>
+function MetaPill({ label }: { label: string }) {
+  return (
+    <span className="rounded-full border border-sage-200 bg-sage-50 px-2.5 py-1 text-xs font-medium text-sage-600">
+      {label}
+    </span>
   );
 }
 
