@@ -7,15 +7,24 @@ import { TimelineChart } from "@/components/timeline-chart";
 import { DealsTable } from "@/components/deals-table";
 import { HexEmbeds } from "@/components/hex-embeds";
 import { ChatWidget } from "@/components/chat-widget";
-import type { CustomerData, TimelineMetric } from "@/lib/types";
+import type { CustomerData, SlackInsightPayload, TimelineMetric } from "@/lib/types";
+import { SlackInsightPanel } from "@/components/slack-insight-panel";
 
-export function CustomerPageClient({ data }: { data: CustomerData }) {
+export function CustomerPageClient({
+  data,
+  slackInsight,
+}: {
+  data: CustomerData;
+  slackInsight: SlackInsightPayload | null;
+}) {
   const [activeDeal, setActiveDeal] = useState<string | null>(null);
   const [metric, setMetric] = useState<TimelineMetric>("arr");
 
   return (
     <div className="mx-auto max-w-[1200px] px-6 py-6 space-y-4">
       <CustomerHeader data={data} />
+
+      {slackInsight && <SlackInsightPanel insight={slackInsight} />}
 
       {/* Deal filter — page-level, controls both timeline and deals table */}
       <DealFilter

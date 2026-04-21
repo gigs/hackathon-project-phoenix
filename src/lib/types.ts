@@ -1,5 +1,24 @@
 // --- Customer config (read from customers/*.json) ---
 
+/** Per-customer Slack → Claude insight job (`npm run fetch-slack-insight`). Optional. */
+export interface SlackInsightConfig {
+  enabled: boolean;
+  /**
+   * Inline instructions (short). Optional if `prompt_file` is set.
+   * If both are set, the file is included first and this string is appended after a blank line.
+   */
+  prompt?: string;
+  /**
+   * Repo-relative path to a `.md` or `.txt` file with the main instructions (easier to edit than JSON).
+   * Example: `customers/prompts/klarna.slack-insight.md`
+   */
+  prompt_file?: string;
+  /** Slack history window; default applied in script if omitted. */
+  lookback_days?: number;
+  /** Cap per channel before sending to the model; default applied in script if omitted. */
+  max_messages_per_channel?: number;
+}
+
 export interface CustomerConfig {
   name: string;
   hubspot_company_record_id: string;
@@ -9,6 +28,7 @@ export interface CustomerConfig {
   linear_projects: string[];
   google_sheets: GoogleSheet[];
   hex_embeds?: HexEmbed[];
+  slack_insight?: SlackInsightConfig;
 }
 
 export interface RevenueLine {
@@ -142,6 +162,57 @@ export interface SlackChannelActivity {
   name: string;
   messagesLast7d: number | null;
   messagesLast30d: number | null;
+}
+
+/**
+ * Slack insight sidecar (`data/customers/<slug>.slack-insight.json`).
+ * Schema aligns with `customers/prompts/klarna_prompt.md` Output section;
+ * pipeline adds `schema_version`, `generated_at`, and `sources`.
+ */
+export const SLACK_INSIGHT_SCHEMA_VERSION = 2 as const;
+
+export type SlackInsightRelationshipHealth = "green" | "yellow" | "red";
+
+export interface SlackInsightHealthBlock {
+  status: SlackInsightRelationshipHealth;
+  summary: string;
+}
+
+export type SlackInsightStakeholderSentiment =
+  | "positive"
+  | "neutral"
+  | "negative"
+  | "no_signal";
+
+export interface SlackInsightStakeholderRow {
+  name: string;
+  sentiment: SlackInsightStakeholderSentiment;
+  signal: string;
+  url: string | null;
+}
+
+export interface SlackInsightUpdateRow {
+  summary: string;
+  url: string;
+  timestamp: string;
+}
+
+export type SlackInsightSignalKind = "warning" | "momentum" | "opportunity" | "change";
+
+export interface SlackInsightSignalRow {
+  type: SlackInsightSignalKind;
+  summary: string;
+  url: string | null;
+}
+
+export interface SlackInsightPayload {
+  schema_version: typeof SLACK_INSIGHT_SCHEMA_VERSION;
+  generated_at: string;
+  sources: { channel: string; message_count: number }[];
+  health: SlackInsightHealthBlock;
+  stakeholders: SlackInsightStakeholderRow[];
+  updates: SlackInsightUpdateRow[];
+  signals: SlackInsightSignalRow[];
 }
 
 // --- Portfolio summary (written by fetch script) ---

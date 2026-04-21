@@ -38,5 +38,11 @@
     "support-process-ramp-up-for-revolut-launch-b61433897419",
     "tracker-revolut-can-launch-to-an-intro-audience-9e30d04f44f0"
   ],
-  "google_sheets": []
+  "google_sheets": [],
+  "slack_insight": {
+    "enabled": false,
+    "prompt": "Summarize launch readiness, testing status, and support escalations from Slack. Flag anything time-sensitive.",
+    "lookback_days": 14,
+    "max_messages_per_channel": 400
+  }
 }

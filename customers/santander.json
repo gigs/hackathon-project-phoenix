@@ -5,5 +5,11 @@
   "revenue_lines": [],
   "linear_initiatives": [],
   "linear_projects": [],
-  "google_sheets": []
+  "google_sheets": [],
+  "slack_insight": {
+    "enabled": false,
+    "prompt": "Placeholder — enable after Slack channels are configured.",
+    "lookback_days": 14,
+    "max_messages_per_channel": 200
+  }
 }
