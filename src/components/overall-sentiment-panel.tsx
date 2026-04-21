@@ -106,7 +106,7 @@ export function OverallSentimentPanel({ sentiment }: { sentiment: OverallSentime
           emptyText="Nothing notable to celebrate this window."
         />
         <Column
-          label="What to watch"
+          label="Pay attention"
           signals={sentiment.warning_signs}
           accent="warning"
           emptyText="No warning signs in this window."

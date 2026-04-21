@@ -72,6 +72,15 @@ async function graphql<T>(query: string, variables: Record<string, unknown> = {}
   return json.data as T;
 }
 
+/** Relay pagination — fetch entire connection for insight exports (bounded by MAX_PAGES). */
+const LINEAR_PAGE_SIZE = 100;
+const LINEAR_MAX_PAGES = 100;
+
+interface RelayPageInfo {
+  hasNextPage: boolean;
+  endCursor: string | null;
+}
+
 async function fetchProject(slugId: string, noCache: boolean): Promise<LinearProjectResult | null> {
   if (!noCache) {
     const cached = readCache<LinearProjectResult>("linear", slugId);
@@ -236,6 +245,15 @@ export interface LinearInsightFlaggedIssue {
   projectSlugId: string | null;
 }
 
+export interface LinearInsightMilestone {
+  id: string;
+  name: string;
+  description: string | null;
+  targetDate: string | null;
+  status: string | null;
+  sortOrder: number;
+}
+
 export interface LinearInsightProject {
   slugId: string;
   name: string;
@@ -245,7 +263,18 @@ export interface LinearInsightProject {
   /** SlugIds of initiatives this project rolls up to, if any of them were configured. */
   initiativeSlugIds: string[];
   statusUpdates: LinearInsightStatusUpdate[];
+  milestones: LinearInsightMilestone[];
   flaggedIssues: LinearInsightFlaggedIssue[];
+}
+
+/** Initiative-level weekly/biweekly narrative updates (distinct from project updates). */
+export interface LinearInsightInitiativeUpdate {
+  id: string;
+  url: string;
+  createdAt: string;
+  health: string | null;
+  author: string | null;
+  body: string;
 }
 
 export interface LinearInsightInitiative {
@@ -255,6 +284,7 @@ export interface LinearInsightInitiative {
   status: string | null;
   /** SlugIds of the configured projects that roll up to this initiative. */
   projectSlugIds: string[];
+  initiativeUpdates: LinearInsightInitiativeUpdate[];
 }
 
 export interface LinearInsightContext {
@@ -264,32 +294,53 @@ export interface LinearInsightContext {
   unaffiliatedProjectSlugIds: string[];
 }
 
-interface InitiativeNode {
+/** Raw initiative update rows from Linear GraphQL (paginated until exhausted). */
+type InitiativeUpdateGql = {
+  id: string;
+  body: string;
+  createdAt: string;
+  health: string;
+  url: string;
+  user: { name: string };
+};
+
+type ProjectUpdateGql = {
+  id: string;
+  body: string;
+  createdAt: string;
+  health: string | null;
+  url: string;
+  user: { name: string } | null;
+};
+
+type ProjectMilestoneGql = {
+  id: string;
+  name: string;
+  description: string | null;
+  targetDate: string | null;
+  status: string | null;
+  sortOrder: number;
+};
+
+interface InitiativeInsightApiNode {
   id: string;
   slugId: string;
   name: string;
   url: string;
   status: string | null;
   projects: { nodes: { slugId: string }[] };
+  initiativeUpdates: { nodes: InitiativeUpdateGql[] };
 }
 
-interface ProjectInsightNode {
+interface ProjectInsightApiNode {
   id: string;
   slugId: string;
   name: string;
   url: string;
   state: string;
   health: string | null;
-  projectUpdates: {
-    nodes: {
-      id: string;
-      body: string;
-      createdAt: string;
-      health: string | null;
-      url: string;
-      user: { name: string } | null;
-    }[];
-  };
+  projectUpdates: { nodes: ProjectUpdateGql[] };
+  projectMilestones: { nodes: ProjectMilestoneGql[] };
 }
 
 interface FlaggedInsightIssueNode {
@@ -301,18 +352,154 @@ interface FlaggedInsightIssueNode {
   project: { slugId: string } | null;
 }
 
+async function paginateInitiativeUpdates(initiativeUuid: string): Promise<InitiativeUpdateGql[]> {
+  const nodes: InitiativeUpdateGql[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < LINEAR_MAX_PAGES; page++) {
+    const data: {
+      initiative: {
+        initiativeUpdates: {
+          pageInfo: RelayPageInfo;
+          nodes: InitiativeUpdateGql[];
+        };
+      } | null;
+    } = await graphql(
+      `
+        query($id: String!, $after: String, $first: Int!) {
+          initiative(id: $id) {
+            initiativeUpdates(first: $first, after: $after, orderBy: updatedAt) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                body
+                createdAt
+                health
+                url
+                user { name }
+              }
+            }
+          }
+        }
+      `,
+      { id: initiativeUuid, after, first: LINEAR_PAGE_SIZE },
+    );
+    const conn = data.initiative?.initiativeUpdates;
+    if (!conn) break;
+    nodes.push(...conn.nodes);
+    if (!conn.pageInfo.hasNextPage || !conn.pageInfo.endCursor) break;
+    after = conn.pageInfo.endCursor;
+  }
+  return nodes;
+}
+
+async function paginateProjectUpdates(projectUuid: string): Promise<ProjectUpdateGql[]> {
+  const nodes: ProjectUpdateGql[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < LINEAR_MAX_PAGES; page++) {
+    const data: {
+      project: {
+        projectUpdates: {
+          pageInfo: RelayPageInfo;
+          nodes: ProjectUpdateGql[];
+        };
+      } | null;
+    } = await graphql(
+      `
+        query($id: String!, $after: String, $first: Int!) {
+          project(id: $id) {
+            projectUpdates(first: $first, after: $after, orderBy: updatedAt) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                body
+                createdAt
+                health
+                url
+                user { name }
+              }
+            }
+          }
+        }
+      `,
+      { id: projectUuid, after, first: LINEAR_PAGE_SIZE },
+    );
+    const conn = data.project?.projectUpdates;
+    if (!conn) break;
+    nodes.push(...conn.nodes);
+    if (!conn.pageInfo.hasNextPage || !conn.pageInfo.endCursor) break;
+    after = conn.pageInfo.endCursor;
+  }
+  return nodes;
+}
+
+async function paginateProjectMilestones(projectUuid: string): Promise<ProjectMilestoneGql[]> {
+  const nodes: ProjectMilestoneGql[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < LINEAR_MAX_PAGES; page++) {
+    const data: {
+      project: {
+        projectMilestones: {
+          pageInfo: RelayPageInfo;
+          nodes: ProjectMilestoneGql[];
+        };
+      } | null;
+    } = await graphql(
+      `
+        query($id: String!, $after: String, $first: Int!) {
+          project(id: $id) {
+            projectMilestones(first: $first, after: $after) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                name
+                description
+                targetDate
+                status
+                sortOrder
+              }
+            }
+          }
+        }
+      `,
+      { id: projectUuid, after, first: LINEAR_PAGE_SIZE },
+    );
+    const conn = data.project?.projectMilestones;
+    if (!conn) break;
+    nodes.push(...conn.nodes);
+    if (!conn.pageInfo.hasNextPage || !conn.pageInfo.endCursor) break;
+    after = conn.pageInfo.endCursor;
+  }
+  return nodes;
+}
+
 async function fetchInitiativeInsight(
   slugId: string,
   noCache: boolean,
-): Promise<InitiativeNode | null> {
+): Promise<InitiativeInsightApiNode | null> {
   const cacheKey = `insight-initiative-${slugId}`;
   if (!noCache) {
-    const cached = readCache<InitiativeNode>("linear", cacheKey);
+    const cached = readCache<InitiativeInsightApiNode>("linear", cacheKey);
     if (cached) return cached;
   }
 
   try {
-    const data = await graphql<{ initiatives: { nodes: InitiativeNode[] } }>(
+    const data: {
+      initiatives: {
+        nodes: Pick<
+          InitiativeInsightApiNode,
+          "id" | "slugId" | "name" | "url" | "status" | "projects"
+        >[];
+      };
+    } = await graphql(
       `
         query($slugId: String!) {
           initiatives(filter: { slugId: { eq: $slugId } }, first: 1) {
@@ -331,8 +518,15 @@ async function fetchInitiativeInsight(
       `,
       { slugId },
     );
-    const node = data.initiatives.nodes[0] ?? null;
-    if (node) writeCache("linear", cacheKey, node);
+    const base = data.initiatives.nodes[0] ?? null;
+    if (!base) return null;
+
+    const updateNodes = await paginateInitiativeUpdates(base.id);
+    const node: InitiativeInsightApiNode = {
+      ...base,
+      initiativeUpdates: { nodes: updateNodes },
+    };
+    writeCache("linear", cacheKey, node);
     return node;
   } catch (e) {
     console.warn(
@@ -346,15 +540,22 @@ async function fetchInitiativeInsight(
 async function fetchProjectInsight(
   slugId: string,
   noCache: boolean,
-): Promise<ProjectInsightNode | null> {
+): Promise<ProjectInsightApiNode | null> {
   const cacheKey = `insight-project-${slugId}`;
   if (!noCache) {
-    const cached = readCache<ProjectInsightNode>("linear", cacheKey);
+    const cached = readCache<ProjectInsightApiNode>("linear", cacheKey);
     if (cached) return cached;
   }
 
   try {
-    const data = await graphql<{ projects: { nodes: ProjectInsightNode[] } }>(
+    const data: {
+      projects: {
+        nodes: Pick<
+          ProjectInsightApiNode,
+          "id" | "slugId" | "name" | "url" | "state" | "health"
+        >[];
+      };
+    } = await graphql(
       `
         query($slugId: String!) {
           projects(filter: { slugId: { eq: $slugId } }, first: 1) {
@@ -365,24 +566,26 @@ async function fetchProjectInsight(
               url
               state
               health
-              projectUpdates(first: 25, orderBy: updatedAt) {
-                nodes {
-                  id
-                  body
-                  createdAt
-                  health
-                  url
-                  user { name }
-                }
-              }
             }
           }
         }
       `,
       { slugId },
     );
-    const node = data.projects.nodes[0] ?? null;
-    if (node) writeCache("linear", cacheKey, node);
+    const base = data.projects.nodes[0] ?? null;
+    if (!base) return null;
+
+    const [updateNodes, milestoneNodes] = await Promise.all([
+      paginateProjectUpdates(base.id),
+      paginateProjectMilestones(base.id),
+    ]);
+
+    const node: ProjectInsightApiNode = {
+      ...base,
+      projectUpdates: { nodes: updateNodes },
+      projectMilestones: { nodes: milestoneNodes },
+    };
+    writeCache("linear", cacheKey, node);
     return node;
   } catch (e) {
     console.warn(
@@ -405,31 +608,48 @@ async function fetchFlaggedIssuesForInsight(
   }
 
   try {
-    const data = await graphql<{ issues: { nodes: FlaggedInsightIssueNode[] } }>(
-      `
-        query($projectIds: [ID!]!) {
-          issues(
-            filter: {
-              project: { id: { in: $projectIds } }
-              labels: { name: { in: ["flagged", "flag"] } }
-            }
-            first: 100
-          ) {
-            nodes {
-              identifier
-              title
-              state { name }
-              url
-              assignee { name }
-              project { slugId }
+    const nodes: FlaggedInsightIssueNode[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < LINEAR_MAX_PAGES; page++) {
+      const data: {
+        issues: {
+          pageInfo: RelayPageInfo;
+          nodes: FlaggedInsightIssueNode[];
+        };
+      } = await graphql(
+        `
+          query($projectIds: [ID!]!, $after: String, $first: Int!) {
+            issues(
+              filter: {
+                project: { id: { in: $projectIds } }
+                labels: { name: { in: ["flagged", "flag"] } }
+              }
+              first: $first
+              after: $after
+            ) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                identifier
+                title
+                state { name }
+                url
+                assignee { name }
+                project { slugId }
+              }
             }
           }
-        }
-      `,
-      { projectIds },
-    );
-    writeCache("linear", cacheKey, data.issues.nodes);
-    return data.issues.nodes;
+        `,
+        { projectIds, after, first: LINEAR_PAGE_SIZE },
+      );
+      nodes.push(...data.issues.nodes);
+      if (!data.issues.pageInfo.hasNextPage || !data.issues.pageInfo.endCursor) break;
+      after = data.issues.pageInfo.endCursor;
+    }
+    writeCache("linear", cacheKey, nodes);
+    return nodes;
   } catch (e) {
     console.warn(
       `  [linear] Failed to fetch flagged issues (insight):`,
@@ -450,7 +670,7 @@ export async function fetchLinearInsightContext(
   opts: LinearInsightFetchOptions,
 ): Promise<ConnectorResult<LinearInsightContext>> {
   try {
-    const cutoff = Date.now() - opts.lookbackDays * 24 * 60 * 60 * 1000;
+    void opts.lookbackDays; // Slack/overall-sentiment metadata only; Linear export is not date-trimmed.
 
     const [initiativeNodes, projectNodes] = await Promise.all([
       Promise.all(opts.initiativeSlugs.map((s) => fetchInitiativeInsight(s, opts.noCache))),
@@ -465,12 +685,24 @@ export async function fetchLinearInsightContext(
       if (!node) continue;
       const memberSlugs = (node.projects.nodes ?? []).map((p) => p.slugId);
       const configuredMembers = memberSlugs.filter((s) => opts.projectSlugs.includes(s));
+      const initiativeUpdatesAll = (node.initiativeUpdates?.nodes ?? [])
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .map((u): LinearInsightInitiativeUpdate => ({
+          id: u.id,
+          url: u.url,
+          createdAt: u.createdAt,
+          health: u.health ?? null,
+          author: u.user?.name ?? null,
+          body: (u.body ?? "").trim(),
+        }));
+
       initiatives.push({
         slugId: node.slugId,
         name: node.name,
         url: node.url,
         status: node.status,
         projectSlugIds: configuredMembers,
+        initiativeUpdates: initiativeUpdatesAll,
       });
       for (const s of configuredMembers) {
         const existing = projectToInitiatives.get(s) ?? [];
@@ -480,7 +712,7 @@ export async function fetchLinearInsightContext(
     }
 
     const validProjectIds: string[] = [];
-    const projectMeta: { node: ProjectInsightNode; initiativeSlugIds: string[] }[] = [];
+    const projectMeta: { node: ProjectInsightApiNode; initiativeSlugIds: string[] }[] = [];
     for (const node of projectNodes) {
       if (!node) continue;
       validProjectIds.push(node.id);
@@ -509,11 +741,7 @@ export async function fetchLinearInsightContext(
     }
 
     const projects: LinearInsightProject[] = projectMeta.map(({ node, initiativeSlugIds }) => {
-      const updatesInWindow = node.projectUpdates.nodes
-        .filter((u) => {
-          const ts = Date.parse(u.createdAt);
-          return Number.isFinite(ts) && ts >= cutoff;
-        })
+      const statusUpdatesAll = node.projectUpdates.nodes
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
         .map((u): LinearInsightStatusUpdate => ({
           id: u.id,
@@ -524,6 +752,18 @@ export async function fetchLinearInsightContext(
           body: (u.body ?? "").trim(),
         }));
 
+      const milestonesSorted = [...(node.projectMilestones?.nodes ?? [])].sort(
+        (a, b) => a.sortOrder - b.sortOrder,
+      );
+      const milestones: LinearInsightMilestone[] = milestonesSorted.map((m) => ({
+        id: m.id,
+        name: m.name,
+        description: m.description?.trim() ? m.description.trim() : null,
+        targetDate: m.targetDate,
+        status: m.status,
+        sortOrder: m.sortOrder,
+      }));
+
       return {
         slugId: node.slugId,
         name: node.name,
@@ -531,7 +771,8 @@ export async function fetchLinearInsightContext(
         state: node.state,
         health: node.health,
         initiativeSlugIds,
-        statusUpdates: updatesInWindow,
+        statusUpdates: statusUpdatesAll,
+        milestones,
         flaggedIssues: flaggedByProject.get(node.slugId) ?? [],
       };
     });

@@ -108,11 +108,19 @@ function shortIso(iso: string): string {
 }
 
 /**
- * Renders the Linear context as a single markdown block grouped by initiative,
- * with an "Unaffiliated projects" section for any configured projects that
- * don't roll up to a configured initiative.
- *
- * Mirrors the prose shape the prompt expects (see customers/prompts/<slug>.overall-sentiment.md).
+ * Full Linear export for Claude — same role as the Slack transcript: lossless structured
+ * content (JSON) rather than a prose summary. Includes all initiative updates, project
+ * updates, milestones, and flagged issues from `fetchLinearInsightContext`.
+ */
+export function formatLinearRawJsonForPrompt(context: LinearInsightContext): string {
+  const preamble =
+    "Below is the complete Linear export for this account as JSON. It includes every initiative update, project status update, milestone, and flagged issue returned from Linear for the configured linear_initiatives and linear_projects in customers/<slug>.json. This is not a summary—use it as the full Linear source of truth, equivalent in role to the Slack transcript block.";
+  return `${preamble}\n\n${JSON.stringify(context, null, 2)}\n`;
+}
+
+/**
+ * Human-readable Linear digest (deprecated for overall-sentiment; prefer
+ * {@link formatLinearRawJsonForPrompt} so the model sees full update bodies).
  */
 export function formatLinearInsightForPrompt(context: LinearInsightContext): string {
   const projectBySlug = new Map(context.projects.map((p) => [p.slugId, p]));
@@ -121,6 +129,23 @@ export function formatLinearInsightForPrompt(context: LinearInsightContext): str
   for (const init of context.initiatives) {
     const head = `# Initiative: ${init.name}${init.status ? ` — status ${init.status}` : ""}`;
     const lines: string[] = [head, `Linear: ${init.url}`, ""];
+
+    if (init.initiativeUpdates.length === 0) {
+      lines.push("Initiative updates in window: (none)");
+      lines.push("");
+    } else {
+      lines.push(`Initiative updates (${init.initiativeUpdates.length}, newest first):`);
+      for (const u of init.initiativeUpdates) {
+        const meta = [shortIso(u.createdAt)];
+        if (u.health) meta.push(`health ${u.health}`);
+        if (u.author) meta.push(`by ${u.author}`);
+        lines.push(`- ${meta.join(" · ")} — ${u.url}`);
+        if (u.body.trim().length > 0) {
+          lines.push(indent(u.body.trim(), "    "));
+        }
+      }
+      lines.push("");
+    }
 
     if (init.projectSlugIds.length === 0) {
       lines.push("(no configured projects roll up to this initiative)");
@@ -154,6 +179,13 @@ function formatProjectBlock(project: {
   url: string;
   state: string;
   health: string | null;
+  milestones: {
+    name: string;
+    description: string | null;
+    targetDate: string | null;
+    status: string | null;
+    sortOrder: number;
+  }[];
   statusUpdates: { url: string; createdAt: string; health: string | null; author: string | null; body: string }[];
   flaggedIssues: { identifier: string; title: string; state: string; url: string; assignee: string | null }[];
 }): string {
@@ -166,10 +198,27 @@ function formatProjectBlock(project: {
     "",
   ];
 
-  if (project.statusUpdates.length === 0) {
-    lines.push("Status updates in window: (none)");
+  if (project.milestones.length === 0) {
+    lines.push("Milestones: (none returned)");
   } else {
-    lines.push(`Status updates (${project.statusUpdates.length}, newest first):`);
+    lines.push(`Milestones (${project.milestones.length}, roadmap order):`);
+    for (const m of project.milestones) {
+      const bits = [m.name];
+      if (m.targetDate) bits.push(`target ${shortIso(m.targetDate)}`);
+      if (m.status) bits.push(`status ${m.status}`);
+      lines.push(`- ${bits.join(" · ")}`);
+      if (m.description && m.description.trim().length > 0) {
+        lines.push(indent(m.description.trim(), "    "));
+      }
+    }
+  }
+
+  lines.push("");
+
+  if (project.statusUpdates.length === 0) {
+    lines.push("Project status updates in window: (none)");
+  } else {
+    lines.push(`Project status updates (${project.statusUpdates.length}, newest first):`);
     for (const u of project.statusUpdates) {
       const meta = [shortIso(u.createdAt)];
       if (u.health) meta.push(`health ${u.health}`);

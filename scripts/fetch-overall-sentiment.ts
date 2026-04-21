@@ -20,7 +20,7 @@ import { loadAllCustomerConfigs, loadCustomerConfig } from "../src/lib/customer-
 import { buildFallbackAccountBrief, currentArr, currentLines } from "../src/lib/customer-intelligence";
 import { loadCustomerData } from "../src/lib/data-loader";
 import {
-  formatLinearInsightForPrompt,
+  formatLinearRawJsonForPrompt,
   formatTranscriptsForPrompt,
   loadTranscriptSnapshot,
   saveTranscriptSnapshot,
@@ -46,7 +46,7 @@ import {
 
 const DATA_CUSTOMERS_DIR = path.resolve(process.cwd(), "data", "customers");
 const DEFAULT_LOOKBACK_DAYS = 60;
-const DEFAULT_MODEL = "claude-3-5-sonnet-20241022";
+const DEFAULT_MODEL = "claude-opus-4-7";
 
 /**
  * Mirrors `customers/prompts/<slug>.overall-sentiment.md` Output schema —
@@ -58,12 +58,12 @@ Respond with exactly one JSON object and nothing else: no markdown code fences, 
 
 Your JSON must include only these root keys (matching the analytical instructions and Output schema in the user message):
 - summary: string — one sentence on the current overall sentiment of the relationship
-- momentum_signals: array of { "summary": string, "source": "slack" | "linear", "url": string | null } — 0–5 items
-- warning_signs: array of { "summary": string, "source": "slack" | "linear", "url": string | null } — 0–5 items
+- momentum_signals: array of { "summary": string, "source": "slack" | "linear", "url": string | null } — exactly 3 items
+- warning_signs: array of { "summary": string, "source": "slack" | "linear", "url": string | null } — exactly 3 items
 
 Rules:
 - Follow the prompt in the user message for what counts as a momentum vs warning signal.
-- Base every claim on the Linear and Slack content in the user message only. Do not invent URLs, quotes, stakeholders, or events.
+- Base every claim on the Linear and Slack content in the user message only. The Linear section is a complete JSON export (not a summary). Do not invent URLs, quotes, stakeholders, or events.
 - Use null for url only when the prompt explicitly allows it (e.g., silence-based warnings).
 - Do not include schema_version, generated_at, sources, or lookback_days in your output; the pipeline adds those.`;
 
@@ -84,7 +84,7 @@ Your JSON must include only these root keys:
 
 Rules:
 - Optimize for first-glance dashboard use. Short, specific, and grounded.
-- Use the account summary, Slack transcript context, Linear context, HubSpot/deal context, and ARR context in the user message only.
+- Use the account summary, Slack transcript context, Linear JSON export, HubSpot/deal context, and ARR context in the user message only.
 - Confidence should reflect evidence density, not optimism.
 - Prefer concrete milestones, dates, and tracked issues over generic commentary.
 - Do not include markdown or explanation outside the JSON object.`;
@@ -164,6 +164,8 @@ function parseAccountBriefSource(raw: unknown): AccountBriefSource {
     : "slack";
 }
 
+const SIGNALS_EACH = 3;
+
 function parseSignalArray(raw: unknown): OverallSentimentSignal[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((row): OverallSentimentSignal => {
@@ -175,6 +177,22 @@ function parseSignalArray(raw: unknown): OverallSentimentSignal[] {
       url: urlVal === null || typeof urlVal === "string" ? (urlVal as string | null) : null,
     };
   });
+}
+
+/** Exactly three cards per column for the dashboard; trim overflow, pad undershoot with grounded slack rows. */
+function ensureExactlyThreeSignals(
+  signals: OverallSentimentSignal[],
+  kind: "momentum" | "warning",
+): OverallSentimentSignal[] {
+  const trimmed = signals.slice(0, SIGNALS_EACH);
+  const padSummary =
+    kind === "momentum"
+      ? "No additional distinct positive relational signal is documented in the sources for this window."
+      : "No additional distinct caution signal is documented in the sources for this window.";
+  while (trimmed.length < SIGNALS_EACH) {
+    trimmed.push({ summary: padSummary, source: "slack", url: null });
+  }
+  return trimmed;
 }
 
 function normalizePayload(
@@ -190,8 +208,8 @@ function normalizePayload(
     lookback_days: lookbackDays,
     sources,
     summary: typeof o.summary === "string" ? o.summary : "",
-    momentum_signals: parseSignalArray(o.momentum_signals),
-    warning_signs: parseSignalArray(o.warning_signs),
+    momentum_signals: ensureExactlyThreeSignals(parseSignalArray(o.momentum_signals), "momentum"),
+    warning_signs: ensureExactlyThreeSignals(parseSignalArray(o.warning_signs), "warning"),
   };
 }
 
@@ -290,7 +308,7 @@ async function repairJson(anthropic: Anthropic, model: string, invalid: string):
     model,
     max_tokens: 8192,
     system:
-      "Fix invalid JSON. Return one valid JSON object only, no markdown fences. Root keys must be: summary, momentum_signals, warning_signs — as specified in the prior task.",
+      "Fix invalid JSON. Return one valid JSON object only, no markdown fences. Root keys must be: summary, momentum_signals, warning_signs — momentum_signals and warning_signs must each contain exactly 3 objects.",
     messages: [{ role: "user", content: `Repair this JSON:\n\n${invalid}` }],
   });
   return extractAssistantText(msg);
@@ -339,15 +357,23 @@ function buildAccountDataBlock(
 
 function buildLinearSourceCounts(context: LinearInsightContext): OverallSentimentSources["linear"] {
   let updates = 0;
+  let initiativeUpdates = 0;
+  let milestones = 0;
   let flagged = 0;
+  for (const init of context.initiatives) {
+    initiativeUpdates += init.initiativeUpdates.length;
+  }
   for (const p of context.projects) {
     updates += p.statusUpdates.length;
+    milestones += p.milestones.length;
     flagged += p.flaggedIssues.length;
   }
   return {
     initiatives: context.initiatives.length,
     projects: context.projects.length,
     status_updates: updates,
+    initiative_updates: initiativeUpdates,
+    milestones,
     flagged_issues: flagged,
   };
 }
@@ -443,7 +469,7 @@ async function processCustomer(
     linear: buildLinearSourceCounts(linearContext),
   };
 
-  const linearBlock = formatLinearInsightForPrompt(linearContext);
+  const linearBlock = formatLinearRawJsonForPrompt(linearContext);
   const slackBlock = formatTranscriptsForPrompt(transcripts);
   const operatorPrompt = resolvePrompt(slug, cfg);
   const customerData = loadCustomerData(slug);
@@ -458,12 +484,12 @@ async function processCustomer(
 
   const userContent = [
     `Customer account name: ${config.name}`,
-    `Lookback window: ${lookback} days (Slack and Linear)`,
+    `Slack transcript lookback: ${lookback} days. Linear below is a full API export as JSON (not trimmed to that window).`,
     "",
     "Instructions from operator (source of truth for analysis and output expectations):",
     operatorPrompt,
     "",
-    "--- Linear context (initiatives, projects, status updates, flagged issues) ---",
+    "--- Linear (complete JSON export for configured initiatives + projects) ---",
     linearBlock,
     "--- Slack transcripts (channels match customers/<slug>.json slack configuration) ---",
     slackBlock,
@@ -476,7 +502,7 @@ async function processCustomer(
       `   [dry-run] Slack: ${sources.slack.map((s) => `${s.channel}=${s.message_count}`).join(", ") || "(none)"}`,
     );
     console.log(
-      `   [dry-run] Linear: ${sources.linear.initiatives} initiative(s), ${sources.linear.projects} project(s), ${sources.linear.status_updates} status update(s), ${sources.linear.flagged_issues} flagged issue(s)`,
+      `   [dry-run] Linear: ${sources.linear.initiatives} initiative(s), ${sources.linear.projects} project(s), ${sources.linear.initiative_updates} initiative update(s), ${sources.linear.status_updates} project update(s), ${sources.linear.milestones} milestone(s), ${sources.linear.flagged_issues} flagged issue(s)`,
     );
     console.log(`   [dry-run] prompt blocks: linear=${linearChars} chars, slack=${slackChars} chars`);
     return;
@@ -514,7 +540,7 @@ async function processCustomer(
     `Momentum: ${payload.momentum_signals.map((signal) => signal.summary).join(" | ") || "none"}`,
     `Risks: ${payload.warning_signs.map((signal) => signal.summary).join(" | ") || "none"}`,
     "",
-    "--- Linear context ---",
+    "--- Linear (complete JSON export) ---",
     linearBlock,
     "--- Slack transcripts ---",
     slackBlock,
