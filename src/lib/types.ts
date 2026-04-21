@@ -58,6 +58,8 @@ export interface RevenueLine {
   linear_projects: string[];
   slack_channels: string[];
   lightdash_dashboards: string[];
+  /** Gigs analytics project IDs — keys into BigQuery for ARR + active-line metrics. */
+  gigs_project_ids: string[];
 }
 
 export interface GoogleSheet {
@@ -90,10 +92,26 @@ export interface CustomerData {
   driAvatarUrl: string | null;
   deals: DealData[];
   linearIssues: LinearIssue[];
-  arrData: ARRDataPoint[];
+  arrActuals: ActualsRow[];
+  forecast: ForecastRow[];
   milestones: Milestone[];
   slackActivity: SlackActivityData;
   lastUpdated: string;
+}
+
+/** ARR forecast — end-of-month per Gigs analytics project. Sourced from `{slug}-forecast.csv`. */
+export interface ForecastRow {
+  projectId: string; // matches a `revenue_lines[].gigs_project_ids[]` entry in `customers/{slug}.json`
+  monthEnd: string; // ISO "YYYY-MM-DD" — last day of the month this forecast applies to
+  arr: number;
+}
+
+/** Daily ARR + active-subscription metrics, one row per (project, date). Sourced from `{slug}-arr.csv`. */
+export interface ActualsRow {
+  projectId: string;
+  date: string; // ISO "YYYY-MM-DD"
+  arr: number; // daily_arr_usd, summed across product_type/region for this project+date
+  activeLines: number; // active_subscriptions, summed
 }
 
 export interface PersonRef {
@@ -140,7 +158,6 @@ export interface DealData {
   goLiveDate: string | null;
   nextMarketingEffort: { date: string; description: string } | null;
   linearIssueCount: number;
-  miniArrTrend: ARRDataPoint[];
 }
 
 export const IMPLEMENTATION_STAGES = [
@@ -153,13 +170,6 @@ export const IMPLEMENTATION_STAGES = [
 export interface HexEmbed {
   label: string;
   url: string;
-}
-
-export interface ARRDataPoint {
-  date: string; // ISO "YYYY-MM-DD"
-  actual: number | null;
-  forecast: number | null;
-  linesActual?: number | null;
 }
 
 export type TimelineMetric = "arr" | "lines";

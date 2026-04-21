@@ -1,4 +1,4 @@
-import type { ARRDataPoint, CustomerData, HealthHistoryEntry, HealthStatus, PortfolioEntry } from "./types";
+import type { CustomerData, HealthHistoryEntry, HealthStatus, PortfolioEntry } from "./types";
 
 // --- Helpers to generate irregular weekly-ish time series ---------------------
 
@@ -17,51 +17,6 @@ function irregularDates(startISO: string, endISO: string, seed: number): string[
     cursor += days * 86_400_000;
   }
   return out;
-}
-
-function interpAt(targetTs: number, anchors: Array<{ ts: number; val: number | null }>): number | null {
-  let before: { ts: number; val: number | null } | null = null;
-  let after: { ts: number; val: number | null } | null = null;
-  for (const a of anchors) {
-    if (a.ts <= targetTs) before = a;
-    if (a.ts >= targetTs && !after) after = a;
-  }
-  if (!before || before.val == null) return null;
-  if (!after || after.val == null) return before.val;
-  if (before.ts === after.ts) return before.val;
-  const t = (targetTs - before.ts) / (after.ts - before.ts);
-  return Math.round(before.val + (after.val - before.val) * t);
-}
-
-interface ArrAnchor {
-  date: string;
-  actual: number | null;
-  forecast: number | null;
-  linesActual: number | null;
-}
-
-function genARR(
-  startISO: string,
-  endISO: string,
-  todayISO: string,
-  seed: number,
-  anchors: ArrAnchor[],
-): ARRDataPoint[] {
-  const todayTs = new Date(todayISO + "T00:00:00Z").getTime();
-  const toAnchors = (key: "actual" | "forecast" | "linesActual") =>
-    anchors.map((a) => ({ ts: new Date(a.date + "T00:00:00Z").getTime(), val: a[key] }));
-  const actualA = toAnchors("actual");
-  const forecastA = toAnchors("forecast");
-  const linesA = toAnchors("linesActual");
-  return irregularDates(startISO, endISO, seed).map((date) => {
-    const ts = new Date(date + "T00:00:00Z").getTime();
-    return {
-      date,
-      actual: ts <= todayTs ? interpAt(ts, actualA) : null,
-      forecast: interpAt(ts, forecastA),
-      linesActual: ts <= todayTs ? interpAt(ts, linesA) : null,
-    };
-  });
 }
 
 function genHealth(
@@ -91,6 +46,7 @@ export const MOCK_KLARNA: CustomerData = {
         linear_projects: ["klarna-us-mvno-19069457924-14774e3ed18c"],
         slack_channels: [],
         lightdash_dashboards: [],
+        gigs_project_ids: [],
       },
       {
         label: "Klarna UK",
@@ -98,6 +54,7 @@ export const MOCK_KLARNA: CustomerData = {
         linear_projects: ["klarna-uk-mvno-19069457924-010463626266"],
         slack_channels: [],
         lightdash_dashboards: [],
+        gigs_project_ids: [],
       },
       {
         label: "Klarna SE",
@@ -105,6 +62,7 @@ export const MOCK_KLARNA: CustomerData = {
         linear_projects: [],
         slack_channels: [],
         lightdash_dashboards: [],
+        gigs_project_ids: [],
       },
     ],
     linear_initiatives: ["am-klarna-account-cb4fd5a5abb5"],
@@ -163,14 +121,6 @@ export const MOCK_KLARNA: CustomerData = {
       goLiveDate: "Jun 2026",
       nextMarketingEffort: { date: "2026-05-15", description: "US launch webinar with Klarna product team" },
       linearIssueCount: 2,
-      miniArrTrend: [
-        { date: "2026-01-01", actual: 72000, forecast: 72000 },
-        { date: "2026-02-01", actual: 78000, forecast: 76000 },
-        { date: "2026-03-01", actual: 84000, forecast: 82000 },
-        { date: "2026-04-01", actual: null, forecast: 88000 },
-        { date: "2026-05-01", actual: null, forecast: 95000 },
-        { date: "2026-06-01", actual: null, forecast: 102000 },
-      ],
     },
     {
       label: "Klarna UK",
@@ -203,14 +153,6 @@ export const MOCK_KLARNA: CustomerData = {
       goLiveDate: "Q3 2026",
       nextMarketingEffort: null,
       linearIssueCount: 4,
-      miniArrTrend: [
-        { date: "2026-01-01", actual: 30000, forecast: 32000 },
-        { date: "2026-02-01", actual: 35000, forecast: 38000 },
-        { date: "2026-03-01", actual: 42000, forecast: 45000 },
-        { date: "2026-04-01", actual: null, forecast: 52000 },
-        { date: "2026-05-01", actual: null, forecast: 60000 },
-        { date: "2026-06-01", actual: null, forecast: 68000 },
-      ],
     },
     {
       label: "Klarna SE",
@@ -237,7 +179,6 @@ export const MOCK_KLARNA: CustomerData = {
       goLiveDate: null,
       nextMarketingEffort: null,
       linearIssueCount: 0,
-      miniArrTrend: [],
     },
   ],
   linearIssues: [
@@ -272,20 +213,7 @@ export const MOCK_KLARNA: CustomerData = {
       market: "Klarna US",
     },
   ],
-  arrData: genARR("2025-07-01", "2026-06-30", TODAY_ISO, 42, [
-    { date: "2025-07-01", actual: 42000, forecast: 40000, linesActual: 1730 },
-    { date: "2025-08-01", actual: 48000, forecast: 45000, linesActual: 1980 },
-    { date: "2025-09-01", actual: 51000, forecast: 50000, linesActual: 2100 },
-    { date: "2025-10-01", actual: 55000, forecast: 56000, linesActual: 2265 },
-    { date: "2025-11-01", actual: 61000, forecast: 60000, linesActual: 2510 },
-    { date: "2025-12-01", actual: 68000, forecast: 65000, linesActual: 2800 },
-    { date: "2026-01-01", actual: 72000, forecast: 72000, linesActual: 2965 },
-    { date: "2026-02-01", actual: 78000, forecast: 76000, linesActual: 3210 },
-    { date: "2026-03-01", actual: 84000, forecast: 82000, linesActual: 3460 },
-    { date: "2026-04-01", actual: null, forecast: 88000, linesActual: null },
-    { date: "2026-05-01", actual: null, forecast: 95000, linesActual: null },
-    { date: "2026-06-01", actual: null, forecast: 102000, linesActual: null },
-  ]),
+  arrActuals: [],
   milestones: [
     { date: "2025-08-14", label: "US Test Project Created", type: "product", deal: "Klarna US" },
     { date: "2025-10-22", label: "US SOW Signed", type: "legal", deal: "Klarna US" },
@@ -295,6 +223,7 @@ export const MOCK_KLARNA: CustomerData = {
     { date: "2026-05-20", label: "US Contract Signing (est.)", type: "legal", deal: "Klarna US" },
     { date: "2026-06-24", label: "US Go-Live Target", type: "launch", deal: "Klarna US" },
   ],
+  forecast: [],
   slackActivity: {
     channels: [{ name: "#customer-klarna", messagesLast7d: 12, messagesLast30d: 48 }],
   },
@@ -314,6 +243,7 @@ export const MOCK_REVOLUT: CustomerData = {
         linear_projects: ["revolut-mobile-implementation-tracker-36930979171-00f79b1e5e31"],
         slack_channels: ["#ext-gigs-revolut-testing-feedback"],
         lightdash_dashboards: [],
+        gigs_project_ids: [],
       },
       {
         label: "Revolut Ireland",
@@ -321,6 +251,7 @@ export const MOCK_REVOLUT: CustomerData = {
         linear_projects: [],
         slack_channels: [],
         lightdash_dashboards: [],
+        gigs_project_ids: [],
       },
     ],
     linear_initiatives: ["am-revolut-account-05769e519aa1"],
@@ -379,14 +310,6 @@ export const MOCK_REVOLUT: CustomerData = {
       goLiveDate: "May 2026",
       nextMarketingEffort: { date: "2026-05-01", description: "UK co-branded press release with Revolut" },
       linearIssueCount: 6,
-      miniArrTrend: [
-        { date: "2026-01-01", actual: 280000, forecast: 290000 },
-        { date: "2026-02-01", actual: 300000, forecast: 310000 },
-        { date: "2026-03-01", actual: 320000, forecast: 330000 },
-        { date: "2026-04-01", actual: null, forecast: 350000 },
-        { date: "2026-05-01", actual: null, forecast: 370000 },
-        { date: "2026-06-01", actual: null, forecast: 400000 },
-      ],
     },
     {
       label: "Revolut Ireland",
@@ -411,7 +334,6 @@ export const MOCK_REVOLUT: CustomerData = {
       goLiveDate: null,
       nextMarketingEffort: null,
       linearIssueCount: 0,
-      miniArrTrend: [],
     },
   ],
   linearIssues: [
@@ -426,26 +348,14 @@ export const MOCK_REVOLUT: CustomerData = {
       market: "Revolut UK",
     },
   ],
-  arrData: genARR("2025-07-01", "2026-06-30", TODAY_ISO, 101, [
-    { date: "2025-07-01", actual: 180000, forecast: 170000, linesActual: 4500 },
-    { date: "2025-08-01", actual: 200000, forecast: 195000, linesActual: 5000 },
-    { date: "2025-09-01", actual: 220000, forecast: 220000, linesActual: 5500 },
-    { date: "2025-10-01", actual: 240000, forecast: 245000, linesActual: 6000 },
-    { date: "2025-11-01", actual: 260000, forecast: 265000, linesActual: 6500 },
-    { date: "2025-12-01", actual: 280000, forecast: 280000, linesActual: 7000 },
-    { date: "2026-01-01", actual: 300000, forecast: 300000, linesActual: 7500 },
-    { date: "2026-02-01", actual: 320000, forecast: 315000, linesActual: 8000 },
-    { date: "2026-03-01", actual: 340000, forecast: 335000, linesActual: 8500 },
-    { date: "2026-04-01", actual: null, forecast: 360000, linesActual: null },
-    { date: "2026-05-01", actual: null, forecast: 380000, linesActual: null },
-    { date: "2026-06-01", actual: null, forecast: 400000, linesActual: null },
-  ]),
+  arrActuals: [],
   milestones: [
     { date: "2025-09-11", label: "UK Contract Signed", type: "legal", deal: "Revolut UK" },
     { date: "2025-11-06", label: "UK Integration Started", type: "product", deal: "Revolut UK" },
     { date: "2026-01-21", label: "UK Beta Launch", type: "launch", deal: "Revolut UK" },
     { date: "2026-04-30", label: "UK Full Launch (est.)", type: "launch", deal: "Revolut UK" },
   ],
+  forecast: [],
   slackActivity: {
     channels: [{ name: "#customer-revolut", messagesLast7d: 24, messagesLast30d: 96 }],
   },
@@ -469,7 +379,8 @@ export const MOCK_SANTANDER: CustomerData = {
   driAvatarUrl: null,
   deals: [],
   linearIssues: [],
-  arrData: [],
+  arrActuals: [],
+  forecast: [],
   milestones: [],
   slackActivity: { channels: [] },
   lastUpdated: "2026-04-17T14:00:00Z",

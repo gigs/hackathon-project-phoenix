@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "fetch-data": "tsx scripts/fetch-data.ts",
+    "fetch-arr": "tsx scripts/fetch-arr.ts",
     "fetch-slack-insight": "tsx scripts/fetch-slack-insight.ts",
     "fetch-overall-sentiment": "tsx scripts/fetch-overall-sentiment.ts",
     "build:full": "npm run fetch-data && npm run build",

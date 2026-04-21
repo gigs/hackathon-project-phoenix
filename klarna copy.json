@@ -37,15 +37,7 @@
       "linear_projects": [],
       "slack_channels": [],
       "lightdash_dashboards": [],
-      "gigs_project_ids": ["klarna-travel-prod","klarna-travel-dkk-prod","klarna-travel-eu-prod","klarna-travel-gbp-prod","klarna-travel-pln-prod","klarna-travel-nok-prod","klarna-travel-sek-prod"]
-    },
-    {
-      "label": "Klarna HR",
-      "hubspot_deal_record_ids": ["14416764224"],
-      "linear_projects": [],
-      "slack_channels": [],
-      "lightdash_dashboards": [],
-      "gigs_project_ids": ["klarna-hr-production"]
+      "gigs_project_ids": ["klarna-travel-dkk-prod","klarna-travel-eu-prod","klarna-travel-gbp-prod","klarna-travel-pln-prod","klarna-travel-nok-prod","klarna-travel-sek-prod"]
     }
   ],
   "linear_initiatives": [

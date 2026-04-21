@@ -47,7 +47,9 @@ export function CustomerPageClient({
 
       {/* Full-width timeline: ARR + Forecast + Milestones */}
       <TimelineChart
-        arrData={data.arrData}
+        arrActuals={data.arrActuals}
+        forecast={data.forecast}
+        config={data.config}
         milestones={data.milestones}
         deals={data.deals}
         activeDeal={activeDeal}

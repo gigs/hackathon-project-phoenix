@@ -17,14 +17,16 @@
         "#temp-feed-revolut-support",
         "#ext-revolut-mobile-webhook-alerts"
       ],
-      "lightdash_dashboards": []
+      "lightdash_dashboards": [],
+      "gigs_project_ids": []
     },
     {
       "label": "Revolut Ireland",
       "hubspot_deal_record_ids": [],
       "linear_projects": [],
       "slack_channels": [],
-      "lightdash_dashboards": []
+      "lightdash_dashboards": [],
+      "gigs_project_ids": []
     }
   ],
   "linear_initiatives": [

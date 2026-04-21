@@ -7,6 +7,7 @@ import { fetchLinearData } from "../src/lib/connectors/linear";
 import { fetchHubSpotData } from "../src/lib/connectors/hubspot";
 import { fetchSlackActivity } from "../src/lib/connectors/slack";
 import { fetchARRData } from "../src/lib/connectors/lightdash";
+import { fetchForecastData } from "../src/lib/connectors/forecast";
 import { clearCache } from "../src/lib/cache";
 import type {
   CustomerConfig,
@@ -68,23 +69,26 @@ async function fetchCustomerData(slug: string, config: CustomerConfig): Promise<
   ];
 
   // Fetch from all sources in parallel
-  const [linearResult, hubspotResult, slackResult, arrResult] = await Promise.allSettled([
+  const [linearResult, hubspotResult, slackResult, arrResult, forecastResult] = await Promise.allSettled([
     fetchLinearData(allProjectSlugs, noCache),
     fetchHubSpotData(allDealIds, config.hubspot_company_record_id, noCache),
     fetchSlackActivity(allSlackChannels, noCache),
     fetchARRData(slug, noCache),
+    fetchForecastData(slug, noCache),
   ]);
 
   const linear = linearResult.status === "fulfilled" ? linearResult.value.data : null;
   const hubspot = hubspotResult.status === "fulfilled" ? hubspotResult.value.data : null;
   const slack = slackResult.status === "fulfilled" ? slackResult.value.data : null;
-  const arrData = arrResult.status === "fulfilled" ? (arrResult.value.data ?? []) : [];
+  const arrActuals = arrResult.status === "fulfilled" ? (arrResult.value.data ?? []) : [];
+  const forecast = forecastResult.status === "fulfilled" ? (forecastResult.value.data ?? []) : [];
 
   // Log any errors
   if (linearResult.status === "rejected") console.warn("  [linear] Error:", linearResult.reason);
   if (hubspotResult.status === "rejected") console.warn("  [hubspot] Error:", hubspotResult.reason);
   if (slackResult.status === "rejected") console.warn("  [slack] Error:", slackResult.reason);
   if (arrResult.status === "rejected") console.warn("  [lightdash] Error:", arrResult.reason);
+  if (forecastResult.status === "rejected") console.warn("  [forecast] Error:", forecastResult.reason);
 
   // Build deal rows from revenue lines
   const deals: DealData[] = config.revenue_lines.map((rl) => {
@@ -139,7 +143,6 @@ async function fetchCustomerData(slug: string, config: CustomerConfig): Promise<
       goLiveDate: hubspotDeal?.closeDate ?? null,
       nextMarketingEffort: null,
       linearIssueCount: linearProject?.issueCount ?? 0,
-      miniArrTrend: [],
     };
   });
 
@@ -174,7 +177,8 @@ async function fetchCustomerData(slug: string, config: CustomerConfig): Promise<
     healthHistory: [], // TODO: derive from Linear initiative update history
     deals,
     linearIssues: flaggedIssues,
-    arrData,
+    arrActuals,
+    forecast,
     milestones: [],
     slackActivity: slack ?? { channels: [] },
     lastUpdated: new Date().toISOString(),
