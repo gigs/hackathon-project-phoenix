@@ -21,7 +21,7 @@ Klarna Mobile is not competing on price against low-cost US carriers. The bet is
 
 When stakeholders disagree, weight in this order:
 
-1. **Ludo Lombaard** — Innovation Director. Primary decision-maker; the Klarna Mobile lead sits in his org. Owns terms, renewals, pricing. His communication is extremely direct and he seeks to create friction. Only decide sentiment is negative if he explicitly says he is unhappy. His abrasive style and tendency to only communicate if there is an escalation can mean he appears negative when it is neutral or positive. Assume silence in replies is neutral, not negative.
+1. **Ludo Lombaard** — Innovation Director. Primary decision-maker; the Klarna Mobile lead sits in his org. Owns terms, renewals, pricing. His communication is extremely direct and he seeks to create friction. His abrasive style and tendency to only communicate if there is an escalation can mean he appears negative when it is neutral or positive. Assume silence in replies is neutral, not negative. Disregard negative-sounding sentiment unless Ludo explicitly says he is unhappy.
 2. **Thomas Elvestad** — Marketing Director. Primary Klarna sponsor and lead of the Klarna Mobile team. His tone is a reliable proxy for overall Klarna confidence in the relationship.
 3. **Mauro Marroncelli** — Product Delivery Lead. Owns project management, execution, shipping. Main collaborator for legal and operational matters.
 4. **Olivier Guzzi** — Engineering Lead. Owns the technical integration surface. Counterpart for API, provisioning, eSIM, porting, incidents. Has a direct, emotional communication style that can appear negative.
