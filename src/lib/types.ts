@@ -8,6 +8,7 @@ export interface CustomerConfig {
   linear_initiatives: string[];
   linear_projects: string[];
   google_sheets: GoogleSheet[];
+  hex_embeds?: HexEmbed[];
 }
 
 export interface RevenueLine {
@@ -28,16 +29,24 @@ export interface GoogleSheet {
 export type HealthStatus = "green" | "yellow" | "red" | "gray";
 
 export interface Milestone {
-  month: string;
+  date: string; // ISO "YYYY-MM-DD"
   label: string;
   type: "deal" | "product" | "legal" | "launch";
   deal?: string; // which revenue line this belongs to, if any
+}
+
+export interface HealthHistoryEntry {
+  date: string; // ISO "YYYY-MM-DD"
+  status: HealthStatus;
 }
 
 export interface CustomerData {
   config: CustomerConfig;
   slug: string;
   health: HealthStatus;
+  healthHistory: HealthHistoryEntry[];
+  driName: string | null;
+  driAvatarUrl: string | null;
   deals: DealData[];
   linearIssues: LinearIssue[];
   arrData: ARRDataPoint[];
@@ -46,28 +55,73 @@ export interface CustomerData {
   lastUpdated: string;
 }
 
+export interface PersonRef {
+  name: string;
+  avatarUrl?: string;
+}
+
+export interface DealRoles {
+  bd?: PersonRef;
+  solutionEng?: PersonRef;
+  im?: PersonRef;
+  partnerMarketeer?: PersonRef;
+  partnerManager?: PersonRef;
+}
+
+export type DealLifecycle = "presales" | "implementation" | "post-launch";
+
+export interface HealthUpdate {
+  date: string;
+  body: string;
+  author: string | null;
+}
+
 export interface DealData {
   label: string;
   health: HealthStatus;
+  healthUpdateUrl: string | null;
+  healthUpdate: HealthUpdate | null;
   hubspotStage: string | null;
   hubspotStageIndex: number | null;
+  implementationStage: string | null;
+  implementationStageIndex: number | null;
+  lifecycle: DealLifecycle;
+  postLaunchStatus: string | null;
   dealOwner: string | null;
   linearProjectOwner: string | null;
+  linearProjectSlug: string | null;
   dri: string | null;
   driSource: "hubspot" | "linear" | null;
+  roles: DealRoles;
   arr: number | null;
   activations: number | null;
   goLiveProbability: string | null;
   goLiveDate: string | null;
+  nextMarketingEffort: { date: string; description: string } | null;
   linearIssueCount: number;
   miniArrTrend: ARRDataPoint[];
 }
 
+export const IMPLEMENTATION_STAGES = [
+  "Implementation Kicked Off",
+  "F&F",
+  "Limited Audience",
+  "General Availability",
+] as const;
+
+export interface HexEmbed {
+  label: string;
+  url: string;
+}
+
 export interface ARRDataPoint {
-  month: string;
+  date: string; // ISO "YYYY-MM-DD"
   actual: number | null;
   forecast: number | null;
+  linesActual?: number | null;
 }
+
+export type TimelineMetric = "arr" | "lines";
 
 export interface LinearIssue {
   id: string;
@@ -114,9 +168,6 @@ export interface ConnectorResult<T> {
 // --- Constants ---
 
 export const HUBSPOT_STAGES = [
-  "Open Leads",
-  "Pursuing",
-  "Prospects",
   "S1 Discovery",
   "S2 Proposal",
   "S3 Negotiation",

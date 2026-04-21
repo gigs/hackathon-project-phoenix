@@ -25,9 +25,6 @@ const noCache = process.argv.includes("--no-cache");
 
 // HubSpot stages for index lookup
 const STAGES = [
-  "Open Leads",
-  "Pursuing",
-  "Prospects",
   "S1 Discovery",
   "S2 Proposal",
   "S3 Negotiation",
@@ -104,11 +101,14 @@ async function fetchCustomerData(slug: string, config: CustomerConfig): Promise<
     const hubspotStageLabel = hubspotDeal?.stageLabel ?? null;
     const hubspotStageIdx = hubspotStageLabel ? resolveStageIndex(hubspotStageLabel) : (hubspotDeal?.stageIndex ?? null);
 
+    // Lifecycle: presales if no linear project, otherwise implementation
+    const hasLinearProject = rl.linear_projects.length > 0 && linearProject !== null;
+    const lifecycle = hasLinearProject ? "implementation" as const : "presales" as const;
+
     // DRI resolution: Linear owner for implementation, HubSpot owner for presales
     const linearOwner = linearProject?.lead ?? null;
     const hubspotOwner = hubspotDeal?.ownerName ?? null;
-    const isImplementation = hubspotStageIdx !== null && hubspotStageIdx >= 5; // S3 Negotiation or later
-    const dri = isImplementation && linearOwner ? linearOwner : hubspotOwner ?? linearOwner;
+    const dri = lifecycle === "implementation" && linearOwner ? linearOwner : hubspotOwner ?? linearOwner;
     const driSource = dri === linearOwner && linearOwner ? "linear" as const
       : dri === hubspotOwner && hubspotOwner ? "hubspot" as const
       : null;
@@ -116,18 +116,30 @@ async function fetchCustomerData(slug: string, config: CustomerConfig): Promise<
     return {
       label: rl.label,
       health: linearProject?.health ?? "gray",
+      healthUpdateUrl: null, // TODO: fetch from Linear project updates
+      healthUpdate: null, // TODO: fetch latest Linear project update
       hubspotStage: hubspotStageLabel,
       hubspotStageIndex: hubspotStageIdx,
+      implementationStage: null, // TODO: derive from Linear project milestones
+      implementationStageIndex: null,
+      lifecycle,
+      postLaunchStatus: null,
       dealOwner: hubspotOwner,
       linearProjectOwner: linearOwner,
+      linearProjectSlug: rl.linear_projects[0] ?? null,
       dri,
       driSource,
+      roles: {
+        bd: hubspotOwner ? { name: hubspotOwner } : undefined,
+        im: linearOwner ? { name: linearOwner } : undefined,
+      },
       arr: hubspotDeal?.amount ?? null,
-      activations: null, // from Lightdash in future
-      goLiveProbability: null, // needs manual input or derivation
+      activations: null,
+      goLiveProbability: null,
       goLiveDate: hubspotDeal?.closeDate ?? null,
+      nextMarketingEffort: null,
       linearIssueCount: linearProject?.issueCount ?? 0,
-      miniArrTrend: [], // would need per-deal ARR data
+      miniArrTrend: [],
     };
   });
 
@@ -148,14 +160,22 @@ async function fetchCustomerData(slug: string, config: CustomerConfig): Promise<
   const dealHealths = deals.map((d) => d.health);
   const overallHealth = deriveHealth(dealHealths);
 
+  // DRI: first Linear project lead found, or first HubSpot deal owner
+  const driName = deals.find((d) => d.linearProjectOwner)?.linearProjectOwner
+    ?? deals.find((d) => d.dealOwner)?.dealOwner
+    ?? null;
+
   return {
     slug,
     config,
     health: overallHealth,
+    driName,
+    driAvatarUrl: null, // TODO: fetch from Linear user avatar
+    healthHistory: [], // TODO: derive from Linear initiative update history
     deals,
     linearIssues: flaggedIssues,
     arrData,
-    milestones: [], // V1: populated from mock data; future: derive from HubSpot/Linear events
+    milestones: [],
     slackActivity: slack ?? { channels: [] },
     lastUpdated: new Date().toISOString(),
   };

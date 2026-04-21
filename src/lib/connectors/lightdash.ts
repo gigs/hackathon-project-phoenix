@@ -10,9 +10,9 @@ function parseCSV(content: string): ARRDataPoint[] {
 
   // Skip header row
   return lines.slice(1).map((line) => {
-    const [month, actual, forecast] = line.split(",").map((s) => s.trim());
+    const [date, actual, forecast] = line.split(",").map((s) => s.trim());
     return {
-      month: month ?? "",
+      date: date ?? "",
       actual: actual && actual !== "" ? parseFloat(actual) : null,
       forecast: forecast && forecast !== "" ? parseFloat(forecast) : null,
     };

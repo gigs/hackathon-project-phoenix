@@ -1,9 +1,7 @@
 import { loadCustomerData, getAvailableCustomerSlugs } from "@/lib/data-loader";
 import { getCustomerSlugs } from "@/lib/customer-loader";
 import { MOCK_KLARNA, MOCK_REVOLUT, MOCK_SANTANDER } from "@/lib/mock-data";
-import { CustomerHeader } from "@/components/customer-header";
-import { TimelineChart } from "@/components/timeline-chart";
-import { DealsTable } from "@/components/deals-table";
+import { CustomerPageClient } from "./client";
 import type { CustomerData } from "@/lib/types";
 
 const MOCK_MAP: Record<string, CustomerData> = {
@@ -19,10 +17,6 @@ export function generateStaticParams() {
   return slugs.map((slug) => ({ slug }));
 }
 
-/**
- * Merge fetched data with mock data — use fetched values when present,
- * fall back to mock for fields that are empty/missing.
- */
 function mergeWithMock(fetched: CustomerData | null, mock: CustomerData | undefined): CustomerData | null {
   if (!fetched && !mock) return null;
   if (!fetched) return mock ?? null;
@@ -30,16 +24,14 @@ function mergeWithMock(fetched: CustomerData | null, mock: CustomerData | undefi
 
   return {
     ...fetched,
-    // Use fetched deals if they have real data (hubspot stages etc), else mock
     deals: fetched.deals.some((d) => d.hubspotStage !== null) ? fetched.deals : mock.deals,
-    // Use fetched ARR if non-empty, else mock
     arrData: fetched.arrData.length > 0 ? fetched.arrData : mock.arrData,
-    // Use fetched milestones if non-empty, else mock
     milestones: (fetched.milestones ?? []).length > 0 ? fetched.milestones : mock.milestones,
-    // Use fetched issues if non-empty, else mock
     linearIssues: fetched.linearIssues.length > 0 ? fetched.linearIssues : mock.linearIssues,
-    // Use fetched health if not gray (i.e. real data), else mock
     health: fetched.health !== "gray" ? fetched.health : mock.health,
+    driName: fetched.driName ?? mock.driName,
+    driAvatarUrl: fetched.driAvatarUrl ?? mock.driAvatarUrl,
+    healthHistory: (fetched.healthHistory ?? []).length > 0 ? fetched.healthHistory : mock.healthHistory,
   };
 }
 
@@ -64,23 +56,5 @@ export default async function CustomerPage({
     );
   }
 
-  return (
-    <div className="mx-auto max-w-[1200px] px-6 py-6">
-      <CustomerHeader data={data} />
-
-      {/* Full-width timeline: ARR + Forecast + Milestones */}
-      <div className="mt-4">
-        <TimelineChart arrData={data.arrData} milestones={data.milestones} deals={data.deals} />
-      </div>
-
-      {/* Deals table with inline issues */}
-      <div className="mt-4">
-        <DealsTable deals={data.deals} customerName={data.config.name} issues={data.linearIssues} />
-      </div>
-
-      <footer className="mt-4 py-3 text-center text-xs text-sage-400">
-        Last updated: {new Date(data.lastUpdated).toLocaleString()} — Phoenix v0.1
-      </footer>
-    </div>
-  );
+  return <CustomerPageClient data={data} />;
 }
