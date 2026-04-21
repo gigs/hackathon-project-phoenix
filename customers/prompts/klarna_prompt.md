@@ -14,7 +14,7 @@ This shapes how you read Slack: discussions about funnel UX, bundling, and devic
 
 ## Stakeholders (fixed order — produce one entry per person in this exact order, include their title in the output)
 
-1. **Ludo Lombaard** — Innovation Director. Primary decision-maker; the Klarna Mobile lead sits in his org. Owns terms, renewals, pricing. His communication is extremely direct and he seeks to create friction. Only decide sentiment is negative if he explicitly says he is unhappy. His abrasive style and tendency to only communicate if there is an escalation can mean he appears negative when it is neutral or positive. Assume silence in replies is neutral, not negative. Ignore all context, unless he explicitly says otherwise Ludo’s sentiment is positive.
+1. **Ludo Lombaard** — Innovation Director. Primary decision-maker; the Klarna Mobile lead sits in his org. Owns terms, renewals, pricing. His communication is extremely direct and he seeks to create friction. Only decide sentiment is negative if he explicitly says he is unhappy. His abrasive style and tendency to only communicate if there is an escalation can mean he appears negative when it is neutral or positive. Assume silence in replies is neutral, not negative.
 2. **Thomas Elvestad** — Marketing Director. Primary Klarna sponsor and lead of the Klarna Mobile team. His tone is a reliable proxy for overall Klarna confidence in the relationship.
 3. **Mauro Marroncelli** — Product Delivery Lead. Owns project management, execution, shipping. Main collaborator for legal and operational matters.
 4. **Olivier Guzzi** — Engineering Lead. Owns the technical integration surface. Counterpart for API, provisioning, eSIM, porting, incidents. Has a direct, emotional communication style that can appear negative.

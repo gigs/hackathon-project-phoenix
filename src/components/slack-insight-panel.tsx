@@ -1,31 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { SlackInsightPayload, SlackInsightRelationshipHealth } from "@/lib/types";
-
-const HEALTH_LABEL: Record<SlackInsightRelationshipHealth, string> = {
-  green: "Healthy",
-  yellow: "Watch",
-  red: "At risk",
-};
-
-function healthPill(status: SlackInsightRelationshipHealth) {
-  const map: Record<SlackInsightRelationshipHealth, string> = {
-    green: "bg-central-50 text-central-900 border-central-200",
-    yellow: "bg-warning/10 text-warning border-warning/30",
-    red: "bg-red-50 text-red-900 border-red-200",
-  };
-  return map[status] ?? map.yellow;
-}
-
-function healthDot(status: SlackInsightRelationshipHealth) {
-  const map: Record<SlackInsightRelationshipHealth, string> = {
-    green: "bg-central-500",
-    yellow: "bg-warning",
-    red: "bg-red-500",
-  };
-  return map[status] ?? map.yellow;
-}
+import type { SlackInsightPayload } from "@/lib/types";
 
 const SENTIMENT_META: Record<string, { label: string; dot: string; text: string }> = {
   positive: { label: "Positive", dot: "bg-central-500", text: "text-central-700" },
@@ -87,15 +63,6 @@ export function SlackInsightPanel({ insight }: { insight: SlackInsightPayload })
           <p className="text-xs text-sage-500">From recent conversations with the customer</p>
         </div>
         <p className="text-xs tabular-nums text-sage-400">Updated {updated}</p>
-      </div>
-
-      {/* Health */}
-      <div className={`rounded-lg border px-4 py-3 ${healthPill(insight.health.status)}`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`h-2.5 w-2.5 rounded-full ${healthDot(insight.health.status)}`} aria-hidden />
-          <span className="text-sm font-semibold">{HEALTH_LABEL[insight.health.status] ?? insight.health.status}</span>
-        </div>
-        <p className="mt-1.5 text-sm leading-snug">{insight.health.summary}</p>
       </div>
 
       {/* Stakeholders */}
