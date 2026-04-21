@@ -1,14 +1,36 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import type {
+  AccountBriefPayload,
+  CustomerData,
+  OverallSentimentPayload,
+  SlackInsightPayload,
+} from "@/lib/types";
+import { answerCustomerQuestion } from "@/lib/customer-assistant";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  citations?: { label: string; url: string | null }[];
 }
 
-export function ChatWidget({ customerName }: { customerName: string }) {
+export function ChatWidget({
+  customerName,
+  data,
+  brief,
+  slackInsight,
+  overallSentiment,
+  variant = "floating",
+}: {
+  customerName: string;
+  data: CustomerData;
+  brief: AccountBriefPayload;
+  slackInsight: SlackInsightPayload | null;
+  overallSentiment: OverallSentimentPayload | null;
+  variant?: "floating" | "inline";
+}) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -33,17 +55,34 @@ export function ChatWidget({ customerName }: { customerName: string }) {
     setInput("");
     setLoading(true);
 
-    // Simulated response — replace with real API call
     setTimeout(() => {
+      const grounded = answerCustomerQuestion({
+        question: text,
+        data,
+        brief,
+        slackInsight,
+        overallSentiment,
+      });
       const reply: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `This is a placeholder response about ${customerName}. In production, this would query your customer data, Linear issues, HubSpot deals, and Slack activity to answer: "${text}"`,
+        content: grounded.answer,
+        citations: grounded.citations,
       };
       setMessages((prev) => [...prev, reply]);
       setLoading(false);
     }, 800);
   }
+
+  const buttonClasses =
+    variant === "inline"
+      ? "inline-flex items-center gap-2 rounded-full border border-sage-200 bg-sage-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-sage-900 active:translate-y-px"
+      : "fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-central-600 text-white shadow-lg transition hover:bg-central-500 active:translate-y-px";
+
+  const panelClasses =
+    variant === "inline"
+      ? "fixed right-6 top-24 z-50 flex h-[480px] w-[380px] flex-col overflow-hidden rounded-xl border border-sage-200 bg-white shadow-xl"
+      : "fixed bottom-6 right-6 z-50 flex h-[480px] w-[380px] flex-col overflow-hidden rounded-xl border border-sage-200 bg-white shadow-xl";
 
   return (
     <>
@@ -51,23 +90,24 @@ export function ChatWidget({ customerName }: { customerName: string }) {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-central-600 text-white shadow-lg transition hover:bg-central-500 active:translate-y-px"
+          className={buttonClasses}
           title={`Ask about ${customerName}`}
         >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
           </svg>
+          {variant === "inline" ? <span>Ask anything about {customerName}</span> : null}
         </button>
       )}
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-6 right-6 z-50 flex h-[480px] w-[380px] flex-col overflow-hidden rounded-xl border border-sage-200 bg-white shadow-xl">
+        <div className={panelClasses}>
           {/* Header */}
           <div className="flex items-center justify-between border-b border-sage-100 px-4 py-3">
             <div>
               <div className="text-sm font-bold text-sage-900">Ask about {customerName}</div>
-              <div className="text-3xs text-sage-400">Deals, issues, timeline, status</div>
+              <div className="text-3xs text-sage-400">Grounded in deals, sentiment, issues, and activity</div>
             </div>
             <button
               onClick={() => setOpen(false)}
@@ -95,6 +135,7 @@ export function ChatWidget({ customerName }: { customerName: string }) {
                     "Any blockers?",
                     "Who's the DRI?",
                     "ARR summary",
+                    "What changed recently?",
                   ].map((q) => (
                     <button
                       key={q}
@@ -119,7 +160,24 @@ export function ChatWidget({ customerName }: { customerName: string }) {
                       : "bg-sage-50 text-sage-700"
                   }`}
                 >
-                  {msg.content}
+                  <div>{msg.content}</div>
+                  {msg.role === "assistant" && msg.citations && msg.citations.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {msg.citations.map((citation, index) =>
+                        citation.url ? (
+                          <a
+                            key={`${citation.label}-${index}`}
+                            href={citation.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-full border border-sage-200 bg-white px-2 py-0.5 text-3xs font-medium text-central-700 hover:text-central-800"
+                          >
+                            Source {index + 1}
+                          </a>
+                        ) : null,
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}

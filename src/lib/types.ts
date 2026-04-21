@@ -273,6 +273,54 @@ export interface OverallSentimentPayload {
   warning_signs: OverallSentimentSignal[];
 }
 
+/**
+ * Account brief sidecar (`data/customers/<slug>.account-brief.json`).
+ * Compact, dashboard-friendly synthesis built from Slack, Linear, HubSpot,
+ * and ARR context.
+ */
+export const ACCOUNT_BRIEF_SCHEMA_VERSION = 1 as const;
+
+export type AccountBriefSource = OverallSentimentSource | "hubspot" | "arr" | "derived";
+
+export interface AccountBriefCitation {
+  label: string;
+  source: AccountBriefSource;
+  url: string | null;
+}
+
+export interface AccountBriefPoint {
+  summary: string;
+  source: AccountBriefSource;
+  url: string | null;
+}
+
+export interface AccountBriefRisk extends AccountBriefPoint {
+  severity: "high" | "medium" | "low";
+}
+
+export interface AccountBriefMilestone {
+  label: string;
+  date: string | null;
+  owner: string | null;
+  source: AccountBriefSource;
+  url: string | null;
+}
+
+export interface AccountBriefPayload {
+  schema_version: typeof ACCOUNT_BRIEF_SCHEMA_VERSION;
+  generated_at: string;
+  lookback_days: number;
+  headline: string;
+  confidence: number;
+  why_now: AccountBriefPoint[];
+  top_risks: AccountBriefRisk[];
+  next_milestone: AccountBriefMilestone | null;
+  commercial_state: string;
+  delivery_state: string;
+  stakeholder_state: string;
+  citations: AccountBriefCitation[];
+}
+
 // --- Portfolio summary (written by fetch script) ---
 
 export interface PortfolioEntry {
@@ -283,6 +331,11 @@ export interface PortfolioEntry {
   totalArr: number | null;
   stages: Record<string, number>;
   topLineHealth: HealthStatus[];
+  driName: string | null;
+  whyNow: string;
+  openRiskCount: number;
+  nextMilestone: string | null;
+  nextMilestoneDate: string | null;
   lastUpdated: string;
 }
 

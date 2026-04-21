@@ -8,8 +8,8 @@ import { StagePipeline } from "./stage-pipeline";
 const LINEAR_ORG = process.env.NEXT_PUBLIC_LINEAR_ORG_SLUG ?? "gigs";
 
 const STATUS_COLORS: Record<string, string> = {
-  "In Progress": "bg-purple-100 text-purple-700",
-  Todo: "bg-blue-100 text-blue-700",
+  "In Progress": "bg-central-50 text-central-700",
+  Todo: "bg-sage-100 text-sage-700",
   Done: "bg-central-50 text-central-700",
   Backlog: "bg-sage-100 text-sage-600",
 };
@@ -298,6 +298,8 @@ export function DealsTable({
 
 function IssueRow({ issue }: { issue: LinearIssue }) {
   const isUrgent = issue.priority <= 1;
+  const linearHref =
+    issue.url && issue.url !== "#" ? issue.url : null;
   return (
     <div
       className={`flex items-start gap-3 rounded-lg border p-3 ${
@@ -317,12 +319,16 @@ function IssueRow({ issue }: { issue: LinearIssue }) {
           {issue.assignee && (
             <span className="text-3xs text-sage-400">{issue.assignee}</span>
           )}
-          <a
-            href={issue.url}
-            className="text-3xs font-medium text-central-600 hover:text-central-700"
-          >
-            Open in Linear →
-          </a>
+          {linearHref ? (
+            <a
+              href={linearHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-3xs font-medium text-central-600 hover:text-central-700"
+            >
+              Open in Linear →
+            </a>
+          ) : null}
         </div>
       </div>
     </div>
