@@ -11,6 +11,14 @@ interface LinearProjectNode {
   health: string | null;
   lead: { name: string } | null;
   issues: { nodes: { id: string }[] };
+  projectUpdates: {
+    nodes: Array<{
+      body: string;
+      createdAt: string;
+      url: string | null;
+      user: { name: string } | null;
+    }>;
+  };
 }
 
 interface LinearIssueNode {
@@ -32,6 +40,12 @@ export interface LinearProjectResult {
   health: HealthStatus;
   lead: string | null;
   issueCount: number;
+  latestUpdate: {
+    body: string;
+    createdAt: string; // ISO
+    author: string | null;
+    url: string | null;
+  } | null;
 }
 
 export interface LinearDataForCustomer {
@@ -93,6 +107,14 @@ async function fetchProject(slugId: string, noCache: boolean): Promise<LinearPro
             health
             lead { name }
             issues { nodes { id } }
+            projectUpdates(first: 1, orderBy: updatedAt) {
+              nodes {
+                body
+                createdAt
+                url
+                user { name }
+              }
+            }
           }
         }
       }
@@ -101,6 +123,7 @@ async function fetchProject(slugId: string, noCache: boolean): Promise<LinearPro
     const project = data.projects.nodes[0];
     if (!project) return null;
 
+    const latestUpdateNode = project.projectUpdates?.nodes?.[0] ?? null;
     const result: LinearProjectResult = {
       id: project.id,
       name: project.name,
@@ -108,6 +131,14 @@ async function fetchProject(slugId: string, noCache: boolean): Promise<LinearPro
       health: mapHealth(project.health),
       lead: project.lead?.name ?? null,
       issueCount: project.issues.nodes.length,
+      latestUpdate: latestUpdateNode
+        ? {
+            body: latestUpdateNode.body,
+            createdAt: latestUpdateNode.createdAt,
+            author: latestUpdateNode.user?.name ?? null,
+            url: latestUpdateNode.url ?? null,
+          }
+        : null,
     };
 
     writeCache("linear", slugId, result);

@@ -117,11 +117,18 @@ async function fetchCustomerData(slug: string, config: CustomerConfig): Promise<
       : dri === hubspotOwner && hubspotOwner ? "hubspot" as const
       : null;
 
+    const latestProjectUpdate = linearProject?.latestUpdate ?? null;
     return {
       label: rl.label,
       health: linearProject?.health ?? "gray",
-      healthUpdateUrl: null, // TODO: fetch from Linear project updates
-      healthUpdate: null, // TODO: fetch latest Linear project update
+      healthUpdateUrl: latestProjectUpdate?.url ?? null,
+      healthUpdate: latestProjectUpdate
+        ? {
+            date: latestProjectUpdate.createdAt,
+            body: latestProjectUpdate.body,
+            author: latestProjectUpdate.author,
+          }
+        : null,
       hubspotStage: hubspotStageLabel,
       hubspotStageIndex: hubspotStageIdx,
       implementationStage: null, // TODO: derive from Linear project milestones
