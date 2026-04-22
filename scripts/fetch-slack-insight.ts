@@ -34,7 +34,7 @@ const DEFAULT_LOOKBACK_DAYS = 14;
 const DEFAULT_MAX_MESSAGES_PER_CHANNEL = 0;
 /** `0` = full Slack message text (no truncation). */
 const DEFAULT_MAX_MESSAGE_CHARS = 0;
-const DEFAULT_MODEL = "claude-3-5-sonnet-20241022";
+const DEFAULT_MODEL = "claude-opus-4-7";
 
 /** Matches `customers/prompts/klarna_prompt.md` — model returns only these keys; pipeline merges metadata. */
 const SYSTEM_PROMPT = `You are an analyst for account relationship intelligence.

@@ -268,7 +268,12 @@ export interface OverallSentimentSources {
   linear: {
     initiatives: number;
     projects: number;
+    /** Project-level status updates (within lookback). */
     status_updates: number;
+    /** Initiative-level weekly updates (within lookback). */
+    initiative_updates: number;
+    /** Project milestones returned from Linear (full roadmap slice). */
+    milestones: number;
     flagged_issues: number;
   };
 }

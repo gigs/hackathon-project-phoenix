@@ -77,13 +77,13 @@ export function CustomerPageClient({
 
       <AccountBriefPanel brief={accountBrief} />
 
-      {slackInsight ? <SlackInsightPanel insight={slackInsight} /> : null}
-
-      {overallSentiment ? <OverallSentimentPanel sentiment={overallSentiment} /> : null}
-
       {data.config.hex_embeds && data.config.hex_embeds.length > 0 && (
         <HexEmbeds embeds={data.config.hex_embeds} />
       )}
+
+      {slackInsight ? <SlackInsightPanel insight={slackInsight} /> : null}
+
+      {overallSentiment ? <OverallSentimentPanel sentiment={overallSentiment} /> : null}
 
       <footer className="py-3 text-center text-xs text-sage-400">
         Last updated: {new Date(data.lastUpdated).toLocaleString()} — Phoenix v0.1
