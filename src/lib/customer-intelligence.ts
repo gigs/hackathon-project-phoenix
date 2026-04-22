@@ -51,9 +51,18 @@ export function customerDailySeries(
 }
 
 export function currentLines(data: CustomerData): number | null {
+  // BQ's `active_subscriptions` decays to 0 as dates approach today, so a
+  // point-in-time reading is misleading. Use the peak within the most recent
+  // calendar month present in the series.
   const series = customerDailySeries(data);
-  const latest = series[series.length - 1];
-  if (latest && latest.lines > 0) return latest.lines;
+  if (series.length > 0) {
+    const latestMonth = series[series.length - 1].date.slice(0, 7);
+    let peak = 0;
+    for (const p of series) {
+      if (p.date.startsWith(latestMonth) && p.lines > peak) peak = p.lines;
+    }
+    if (peak > 0) return peak;
+  }
   const total = data.deals.reduce((sum, deal) => sum + (deal.activations ?? 0), 0);
   return total > 0 ? total : null;
 }

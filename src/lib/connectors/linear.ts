@@ -178,7 +178,7 @@ async function fetchFlaggedIssues(
         issues(
           filter: {
             project: { id: { in: $projectIds } }
-            labels: { name: { in: ["flagged", "flag"] } }
+            labels: { name: { in: ["flagged", "flag", "State (of Implementations)"] } }
           }
           first: 50
         ) {
@@ -653,7 +653,7 @@ async function fetchFlaggedIssuesForInsight(
             issues(
               filter: {
                 project: { id: { in: $projectIds } }
-                labels: { name: { in: ["flagged", "flag"] } }
+                labels: { name: { in: ["flagged", "flag", "State (of Implementations)"] } }
               }
               first: $first
               after: $after

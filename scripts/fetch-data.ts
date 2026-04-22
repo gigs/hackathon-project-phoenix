@@ -170,8 +170,10 @@ async function fetchCustomerData(slug: string, config: CustomerConfig): Promise<
   const dealHealths = deals.map((d) => d.health);
   const overallHealth = deriveHealth(dealHealths);
 
-  // DRI: first Linear project lead found, or first HubSpot deal owner
-  const driName = deals.find((d) => d.linearProjectOwner)?.linearProjectOwner
+  // DRI: explicit override in customer.json wins; otherwise the first Linear
+  // project lead found, or the first HubSpot deal owner.
+  const driName = config.dri_name
+    ?? deals.find((d) => d.linearProjectOwner)?.linearProjectOwner
     ?? deals.find((d) => d.dealOwner)?.dealOwner
     ?? null;
 

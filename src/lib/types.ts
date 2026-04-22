@@ -34,6 +34,8 @@ export interface CustomerConfig {
   hex_embeds?: HexEmbed[];
   slack_insight?: SlackInsightConfig;
   overall_sentiment?: OverallSentimentConfig;
+  /** Explicit account DRI name, overrides the Linear/HubSpot-derived owner. */
+  dri_name?: string;
 }
 
 /**

@@ -141,11 +141,20 @@ function rollup(
     forecastArrByDate.set(row.monthEnd, (forecastArrByDate.get(row.monthEnd) ?? 0) + row.arr);
   }
 
-  // Unified date set spanning both series.
-  const allDates = new Set<string>([
-    ...actualArrByDate.keys(),
-    ...forecastArrByDate.keys(),
-  ]);
+  // Cap the future horizon to ~3 months past the latest actuals so the Y
+  // axis isn't dominated by long-tail forecast projections. If there are
+  // no actuals (e.g. a deal with only future forecast), show all of it.
+  let latestActualTs = 0;
+  for (const date of actualArrByDate.keys()) {
+    const t = toTs(date);
+    if (t > latestActualTs) latestActualTs = t;
+  }
+  const horizonTs = latestActualTs === 0 ? Infinity : latestActualTs + 92 * DAY;
+
+  const allDates = new Set<string>([...actualArrByDate.keys()]);
+  for (const date of forecastArrByDate.keys()) {
+    if (toTs(date) <= horizonTs) allDates.add(date);
+  }
   const sortedDates = [...allDates].sort();
 
   const displayData: DisplayPoint[] = sortedDates.map((date) => {
@@ -159,13 +168,28 @@ function rollup(
     };
   });
 
-  // Latest ARR and lines for the header — independent of metric.
-  let latestActualDate: string | null = null;
+  // Header values — independent of metric.
+  // ARR: latest date with a rolled-up value.
+  // Lines: peak within the most recent calendar month. BQ's
+  // `active_subscriptions` decays to 0 as dates approach today, so a
+  // point-in-time reading is misleading. The month's peak is more stable.
+  let latestActualArrDate: string | null = null;
   for (const date of actualArrByDate.keys()) {
-    if (!latestActualDate || date > latestActualDate) latestActualDate = date;
+    if (!latestActualArrDate || date > latestActualArrDate) latestActualArrDate = date;
   }
-  const latestActualArr = latestActualDate ? actualArrByDate.get(latestActualDate) ?? null : null;
-  const latestActualLines = latestActualDate ? actualLinesByDate.get(latestActualDate) ?? null : null;
+  let latestMonth: string | null = null;
+  for (const date of actualLinesByDate.keys()) {
+    const month = date.slice(0, 7);
+    if (!latestMonth || month > latestMonth) latestMonth = month;
+  }
+  let peakLinesInMonth = 0;
+  if (latestMonth) {
+    for (const [date, lines] of actualLinesByDate) {
+      if (date.startsWith(latestMonth) && lines > peakLinesInMonth) peakLinesInMonth = lines;
+    }
+  }
+  const latestActualArr = latestActualArrDate ? actualArrByDate.get(latestActualArrDate) ?? null : null;
+  const latestActualLines = peakLinesInMonth > 0 ? peakLinesInMonth : null;
 
   return {
     displayData,
@@ -344,28 +368,17 @@ export function TimelineChart({
               connectNulls={false}
             />
 
-            {/* Milestone reference lines with truncated labels */}
-            {chartMilestones.map((m, i) => {
-              const truncated = m.label.length > 20 ? m.label.slice(0, 20) + "…" : m.label;
-              return (
-                <ReferenceLine
-                  key={`${m.date}-${i}`}
-                  x={toTs(m.date)}
-                  stroke={MILESTONE_COLORS[m.type] ?? "var(--color-sage-400)"}
-                  strokeWidth={1}
-                  strokeDasharray="3 3"
-                  strokeOpacity={0.4}
-                  label={{
-                    value: truncated,
-                    position: "insideTopLeft",
-                    fill: "var(--color-sage-500)",
-                    fontSize: 9,
-                    dx: 4,
-                    dy: 2,
-                  }}
-                />
-              );
-            })}
+            {/* Milestone reference lines — labels only via tooltip on hover */}
+            {chartMilestones.map((m, i) => (
+              <ReferenceLine
+                key={`${m.date}-${i}`}
+                x={toTs(m.date)}
+                stroke={MILESTONE_COLORS[m.type] ?? "var(--color-sage-400)"}
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                strokeOpacity={0.4}
+              />
+            ))}
 
             {/* Now line */}
             {nowTs !== null && (
